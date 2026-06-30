@@ -1,5 +1,5 @@
 import { serve } from "bun";
-import { loadConfig } from "./config";
+import { loadApiConfig } from "./config";
 import { createDb } from "./db/client";
 import { runMigrations } from "./db/migrate";
 import { PostgresRelunarStore } from "./db/store";
@@ -7,7 +7,7 @@ import { createApp } from "./http/app";
 import { createLogger } from "./logger";
 import { createPgBoss, PgBossReproQueue } from "./queue";
 
-const config = loadConfig();
+const config = loadApiConfig();
 const logger = createLogger(config.LOG_LEVEL);
 const { db } = createDb(config.DATABASE_URL);
 await runMigrations(db);
