@@ -20,7 +20,7 @@ export type ErrorCategory = (typeof errorCategories)[number];
 
 export type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
 
-export type CommandPhase = "clone" | "inspect" | "install" | "build" | "test";
+export type CommandPhase = "clone" | "inspect" | "install" | "setup" | "build" | "test";
 
 export type CommandRunInput = {
   sequence: number;

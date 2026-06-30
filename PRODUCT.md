@@ -123,3 +123,13 @@ Failure comments should show the exact command, exit code, and a short log excer
 
 After the deterministic baseline works, Relunar can add issue-specific repro attempts. AI may be introduced later through a separate approach, but it must remain bounded by the harness. The harness owns execution, status classification, and GitHub writes.
 
+## Milestone 2
+
+Relunar supports an optional `.relunar.yml` file for maintainer-defined setup commands:
+
+```yaml
+setup:
+  - bun run generate
+```
+
+These commands run after install and before build/test in the Daytona sandbox. They are recorded and reported like every other command. Invalid config or setup command failure results in a blocked baseline, not an inferred workaround.

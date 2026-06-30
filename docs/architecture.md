@@ -108,11 +108,13 @@ The runner executes a fixed baseline sequence:
 1. clone repository
 2. detect package manager
 3. install dependencies
-4. inspect `package.json`
-5. run build script if present
-6. run test script if present
+4. inspect `.relunar.yml` when present
+5. run configured setup commands when present
+6. inspect `package.json`
+7. run build script if present
+8. run test script if present
 
-The runner never executes commands from issue body in milestone 1.
+The runner never executes commands from issue bodies. Repository-level `.relunar.yml` setup commands are maintainer-controlled project configuration and run only inside the Daytona sandbox.
 
 ## Package Manager Detection
 
@@ -143,6 +145,19 @@ Each command run records:
 - stderr excerpt
 
 Commands must have timeouts. The worker must stop executing the job after a terminal failure unless later commands are explicitly safe and useful.
+
+## Repository Config
+
+Relunar reads an optional `.relunar.yml` file from the repository root after dependencies install.
+
+Supported shape:
+
+```yaml
+setup:
+  - bun run generate
+```
+
+The config parser accepts only `setup` as an array of non-empty command strings. Setup commands run before build/test detection, are recorded with the `setup` command phase, and participate in normal timeout/failure classification. Invalid config blocks the job rather than falling back to speculative behavior.
 
 ## GitHub Integration
 
@@ -259,4 +274,3 @@ Reporter writes comment
 ```
 
 Milestone 1 implements only the harness.
-
