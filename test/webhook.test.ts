@@ -59,6 +59,36 @@ describe("GitHub webhook API", () => {
     expect(bundle?.issue.number).toBe(42);
   });
 
+  test("queues issues.opened deliveries with a minimal repository payload", async () => {
+    const store = new MemoryRelunarStore();
+    const queue = new MemoryReproQueue();
+    const app = createApp({
+      webhookSecret: "secret",
+      store,
+      queue,
+      logger: testLogger(),
+    });
+    const body = JSON.stringify(issueOpenedPayload({ minimalRepository: true }));
+
+    const response = await app.request("/webhooks/github", {
+      method: "POST",
+      headers: {
+        "x-github-event": "issues",
+        "x-github-delivery": "delivery-1",
+        "x-hub-signature-256": signBody(body, "secret"),
+      },
+      body,
+    });
+
+    expect(response.status).toBe(202);
+    const json = (await response.json()) as { accepted: boolean; jobId: string };
+    expect(json.accepted).toBe(true);
+    const bundle = await store.getJobBundle(json.jobId);
+    expect(bundle?.repository.defaultBranch).toBe("main");
+    expect(bundle?.repository.cloneUrl).toBe("https://github.com/maintainer/demo.git");
+    expect(bundle?.repository.htmlUrl).toBe("https://github.com/maintainer/demo");
+  });
+
   test("ignores private repositories for milestone 1", async () => {
     const store = new MemoryRelunarStore();
     const queue = new MemoryReproQueue();
