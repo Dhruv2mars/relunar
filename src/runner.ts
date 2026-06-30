@@ -29,12 +29,19 @@ export async function runBaselineJob(input: {
 }): Promise<BaselineRunResult> {
   const startedAt = Date.now();
   const sandbox = await input.sandboxProvider.createSandbox({ jobId: input.bundle.job.id });
+  const deadline = new JobDeadline(startedAt, input.options.jobTimeoutSeconds);
   await input.store.markJobRunning(input.bundle.job.id, {
     sandboxId: sandbox.id,
     sandboxTarget: sandbox.target,
   });
 
-  const commandRecorder = new CommandRecorder(input.store, input.bundle.job.id, sandbox, input.options.commandTimeoutSeconds);
+  const commandRecorder = new CommandRecorder(
+    input.store,
+    input.bundle.job.id,
+    sandbox,
+    input.options.commandTimeoutSeconds,
+    deadline,
+  );
   let commitSha: string | null = null;
   let packageManager = input.bundle.job.packageManager;
   let finish: FinishJobInput | null = null;
@@ -148,6 +155,21 @@ export async function runBaselineJob(input: {
       packageManager,
     };
     return await finalize(input, finish);
+  } catch (error) {
+    if (error instanceof JobDeadlineExceededError) {
+      finish = {
+        result: "run_failed",
+        errorCategory: "command_timeout",
+        errorMessage: "Job exceeded the hard timeout before the next command could start.",
+        sandboxId: sandbox.id,
+        sandboxTarget: sandbox.target,
+        commitSha,
+        packageManager,
+      };
+      return await finalize(input, finish);
+    }
+
+    throw error;
   } finally {
     const durationMs = Date.now() - startedAt;
     input.logger.info(
@@ -172,11 +194,13 @@ class CommandRecorder {
     private readonly jobId: string,
     private readonly sandbox: SandboxSession,
     private readonly timeoutSeconds: number,
+    private readonly deadline: JobDeadline,
   ) {}
 
   async run(phase: CommandPhase, command: string, cwd: string | undefined): Promise<CommandRun> {
+    const commandTimeoutSeconds = this.deadline.commandTimeoutSeconds(this.timeoutSeconds);
     const startedAt = new Date();
-    const result = await this.sandbox.run(command, cwd, this.timeoutSeconds);
+    const result = await this.sandbox.run(command, cwd, commandTimeoutSeconds);
     const finishedAt = new Date();
     return await this.store.recordCommandRun(this.jobId, {
       sequence: ++this.sequence,
@@ -191,6 +215,28 @@ class CommandRecorder {
       stdoutExcerpt: excerpt(result.stdout),
       stderrExcerpt: excerpt(result.stderr),
     });
+  }
+}
+
+class JobDeadline {
+  constructor(
+    private readonly startedAtMs: number,
+    private readonly timeoutSeconds: number,
+  ) {}
+
+  commandTimeoutSeconds(defaultTimeoutSeconds: number): number {
+    const remainingMs = this.startedAtMs + this.timeoutSeconds * 1000 - Date.now();
+    if (remainingMs <= 0) {
+      throw new JobDeadlineExceededError();
+    }
+
+    return Math.max(1, Math.min(defaultTimeoutSeconds, Math.ceil(remainingMs / 1000)));
+  }
+}
+
+class JobDeadlineExceededError extends Error {
+  constructor() {
+    super("job_deadline_exceeded");
   }
 }
 

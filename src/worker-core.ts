@@ -20,16 +20,13 @@ export async function processReproJob(jobId: string, dependencies: ProcessReproJ
   }
 
   try {
-    const result = await withTimeout(
-      runBaselineJob({
-        bundle,
-        store: dependencies.store,
-        sandboxProvider: dependencies.sandboxProvider,
-        logger: dependencies.logger,
-        options: dependencies.runnerOptions,
-      }),
-      dependencies.runnerOptions.jobTimeoutSeconds,
-    );
+    const result = await runBaselineJob({
+      bundle,
+      store: dependencies.store,
+      sandboxProvider: dependencies.sandboxProvider,
+      logger: dependencies.logger,
+      options: dependencies.runnerOptions,
+    });
 
     const comment = await dependencies.github.createIssueComment({
       installationId: bundle.repository.installationId,
@@ -69,9 +66,6 @@ export async function processReproJob(jobId: string, dependencies: ProcessReproJ
 
 function categorizeWorkerError(error: unknown): ErrorCategory {
   if (error instanceof Error) {
-    if (error.message === "job_timeout") {
-      return "command_timeout";
-    }
     if (/github|octokit|comment/i.test(error.message)) {
       return "report_post_error";
     }
@@ -81,19 +75,4 @@ function categorizeWorkerError(error: unknown): ErrorCategory {
   }
 
   return "queue_error";
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutSeconds: number): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => reject(new Error("job_timeout")), timeoutSeconds * 1000);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-  }
 }

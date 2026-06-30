@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "smoke:e2e": "bun src/scripts/e2e-smoke.ts",
     "verify": "bun test && bun run typecheck"
   },
   "dependencies": {

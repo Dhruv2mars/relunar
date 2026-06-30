@@ -112,6 +112,36 @@ describe("baseline runner", () => {
     expect(result.commentBody).toContain("Status: Blocked");
     expect(result.commentBody).toContain("No supported JavaScript or TypeScript package shape was detected.");
   });
+
+  test("stops before running commands when the job deadline is already expired", async () => {
+    const store = new MemoryRelunarStore();
+    const { jobId } = await store.createIssueJob(jobInputFromPayload());
+    const bundle = await store.getJobBundle(jobId);
+    if (!bundle) {
+      throw new Error("missing test bundle");
+    }
+
+    const sandbox = new FakeSandboxProvider([]);
+
+    const result = await runBaselineJob({
+      bundle,
+      store,
+      sandboxProvider: sandbox,
+      logger: testLogger(),
+      options: {
+        commandTimeoutSeconds: 300,
+        jobTimeoutSeconds: 0,
+      },
+    });
+
+    const updated = await store.getJobBundle(jobId);
+    expect(updated?.job.state).toBe("completed");
+    expect(updated?.job.result).toBe("run_failed");
+    expect(updated?.job.errorCategory).toBe("command_timeout");
+    expect(sandbox.commands).toHaveLength(0);
+    expect(result.commentBody).toContain("Status: Run failed");
+    expect(result.commentBody).toContain("Job exceeded the hard timeout before the next command could start.");
+  });
 });
 
 function ok(stdout: string) {

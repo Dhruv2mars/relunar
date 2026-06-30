@@ -71,3 +71,15 @@ bun run verify
 ```
 
 This runs Bun tests and TypeScript typechecking.
+
+## Live Smoke
+
+After the GitHub App is installed on a public JavaScript or TypeScript test repository and Railway has the required environment variables, run:
+
+```sh
+E2E_GITHUB_TOKEN=github_pat_value \
+E2E_REPOSITORY=owner/repo \
+bun run smoke:e2e
+```
+
+The smoke script creates a GitHub issue and waits for a Relunar baseline report comment. It exits non-zero if no report appears before the timeout.
