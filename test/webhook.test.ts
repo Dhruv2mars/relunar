@@ -84,4 +84,30 @@ describe("GitHub webhook API", () => {
     expect(await response.json()).toEqual({ accepted: false, reason: "private_repository" });
     expect(queue.messages).toHaveLength(0);
   });
+
+  test("rejects signed malformed JSON without queuing", async () => {
+    const store = new MemoryRelunarStore();
+    const queue = new MemoryReproQueue();
+    const app = createApp({
+      webhookSecret: "secret",
+      store,
+      queue,
+      logger: testLogger(),
+    });
+    const body = "{";
+
+    const response = await app.request("/webhooks/github", {
+      method: "POST",
+      headers: {
+        "x-github-event": "issues",
+        "x-github-delivery": "delivery-1",
+        "x-hub-signature-256": signBody(body, "secret"),
+      },
+      body,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid JSON payload" });
+    expect(queue.messages).toHaveLength(0);
+  });
 });
