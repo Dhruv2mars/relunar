@@ -30,6 +30,20 @@ GET /health
 
 The worker consumes `repro_jobs` from pg-boss and posts the baseline report.
 
+## Repository Config
+
+Relunar supports an optional `.relunar.yml` file at the repository root.
+
+```yaml
+setup:
+  - bun run generate
+  - bun run db:prepare
+```
+
+`setup` must be an array of command strings. Commands run after dependency install and before detected build/test scripts. Each setup command is executed in the Daytona sandbox, recorded as evidence, and shown in the GitHub comment.
+
+If `.relunar.yml` is invalid or a setup command fails, Relunar stops the run and reports a blocked baseline. Relunar still does not read commands from issue bodies, inject maintainer secrets, edit repository source, create pull requests, or use AI.
+
 ## Environment
 
 Copy `.env.example` values into Railway service variables:

@@ -28,7 +28,7 @@ export const errorCategoryEnum = pgEnum("error_category", [
   "report_post_error",
 ]);
 export const packageManagerEnum = pgEnum("package_manager", ["bun", "pnpm", "yarn", "npm"]);
-export const commandPhaseEnum = pgEnum("command_phase", ["clone", "inspect", "install", "build", "test"]);
+export const commandPhaseEnum = pgEnum("command_phase", ["clone", "inspect", "install", "setup", "build", "test"]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

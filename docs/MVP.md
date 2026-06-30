@@ -183,10 +183,32 @@ Milestone 1 constraints:
 
 After MVP, likely next steps are:
 
-- `.relunar.yml` for explicit setup commands.
 - Update existing bot comment instead of posting one per job.
 - Artifact storage for full logs.
 - Issue-specific deterministic commands when the issue body includes copyable commands.
 - Browser automation for web repositories.
 - AI planning through a separate bounded approach.
 
+## Milestone 2: `.relunar.yml` Setup Commands
+
+Relunar supports an optional `.relunar.yml` file at the repository root.
+
+Supported shape:
+
+```yaml
+setup:
+  - bun run generate
+  - bun run db:prepare
+```
+
+Rules:
+
+- `setup` must be an array of non-empty command strings.
+- At most 10 setup commands are accepted.
+- Setup commands run after dependency install and before detected build/test scripts.
+- Setup commands run in the cloned repository root inside the Daytona sandbox.
+- Each setup command is stored as a `setup` command run and appears in the GitHub comment.
+- If the config file is invalid, the job is classified as `blocked`.
+- If a setup command fails or times out, the job stops and is classified as `blocked`.
+
+This milestone keeps the deterministic harness boundary intact. Relunar still does not execute commands from issue bodies, pass maintainer secrets into the sandbox, mutate repository source, create pull requests, label issues, or use AI.

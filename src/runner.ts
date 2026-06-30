@@ -1,6 +1,7 @@
 import { classifyCommandRuns } from "./domain/classify";
 import { renderBaselineComment, hashCommentBody } from "./domain/comment";
 import { buildCommand, detectPackageManager, testCommand } from "./domain/package-manager";
+import { parseRelunarConfig } from "./domain/relunar-config";
 import { detectRunnableScripts } from "./domain/scripts";
 import type { CommandPhase, CommandRun, ErrorCategory, FinishJobInput, JobBundle } from "./domain/types";
 import type { Logger } from "./logger";
@@ -67,7 +68,7 @@ export async function runBaselineJob(input: {
 
     const fileRun = await commandRecorder.run(
       "inspect",
-      "for f in bun.lockb bun.lock pnpm-lock.yaml yarn.lock package-lock.json package.json; do test -f \"$f\" && echo \"$f\"; done",
+      "for f in bun.lockb bun.lock pnpm-lock.yaml yarn.lock package-lock.json package.json .relunar.yml; do test -f \"$f\" && echo \"$f\"; done",
       "repo",
     );
     if (fileRun.exitCode !== 0 || fileRun.timedOut) {
@@ -83,6 +84,7 @@ export async function runBaselineJob(input: {
     }
 
     const files = fileRun.stdoutExcerpt.split("\n").map((line) => line.trim()).filter(Boolean);
+    const hasRelunarConfig = files.includes(".relunar.yml");
     const detection = detectPackageManager(files);
     if (!detection) {
       finish = {
@@ -108,6 +110,53 @@ export async function runBaselineJob(input: {
         packageManager,
       };
       return await finalize(input, finish);
+    }
+
+    if (hasRelunarConfig) {
+      const configRun = await commandRecorder.run("inspect", "cat .relunar.yml", "repo");
+      if (configRun.exitCode !== 0 || configRun.timedOut) {
+        finish = {
+          result: "blocked",
+          errorCategory: configRun.timedOut ? "command_timeout" : "command_failed",
+          errorMessage: "Relunar could not inspect .relunar.yml.",
+          sandboxId: sandbox.id,
+          sandboxTarget: sandbox.target,
+          commitSha,
+          packageManager,
+        };
+        return await finalize(input, finish);
+      }
+
+      let setupCommands: string[];
+      try {
+        setupCommands = parseRelunarConfig(configRun.stdoutExcerpt).setupCommands;
+      } catch {
+        finish = {
+          result: "blocked",
+          errorCategory: "command_failed",
+          errorMessage: ".relunar.yml is invalid. Expected: setup as an array of command strings.",
+          sandboxId: sandbox.id,
+          sandboxTarget: sandbox.target,
+          commitSha,
+          packageManager,
+        };
+        return await finalize(input, finish);
+      }
+
+      for (const setupCommand of setupCommands) {
+        const setupRun = await commandRecorder.run("setup", setupCommand, "repo");
+        if (setupRun.exitCode !== 0 || setupRun.timedOut) {
+          const classification = classifyCommandRuns(await input.store.listCommandRuns(input.bundle.job.id));
+          finish = {
+            ...classification,
+            sandboxId: sandbox.id,
+            sandboxTarget: sandbox.target,
+            commitSha,
+            packageManager,
+          };
+          return await finalize(input, finish);
+        }
+      }
     }
 
     const packageJsonRun = await commandRecorder.run("inspect", "cat package.json", "repo");
