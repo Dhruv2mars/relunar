@@ -7,37 +7,39 @@ const accountSchema = z.object({
   type: z.string().default("User"),
 });
 
+const githubIdSchema = z.union([z.number(), z.string()]).transform(String);
+
 const repositorySchema = z.object({
-  id: z.number(),
+  id: githubIdSchema,
   name: z.string(),
   full_name: z.string(),
-  private: z.boolean(),
-  default_branch: z.string(),
-  clone_url: z.string().url(),
-  html_url: z.string().url(),
+  private: z.boolean().default(false),
+  default_branch: z.string().optional(),
+  clone_url: z.string().optional(),
+  html_url: z.string().optional(),
   owner: accountSchema,
-});
+}).passthrough();
 
 const issueSchema = z.object({
-  id: z.number(),
-  number: z.number(),
+  id: githubIdSchema,
+  number: z.coerce.number(),
   title: z.string(),
-  body: z.string().nullable(),
-  user: accountSchema,
-  state: z.string(),
-});
+  body: z.string().nullable().optional(),
+  user: accountSchema.nullable().optional(),
+  state: z.string().default("open"),
+}).passthrough();
 
 const installationSchema = z.object({
-  id: z.number(),
-  account: accountSchema.nullable(),
-});
+  id: githubIdSchema,
+  account: accountSchema.nullable().optional(),
+}).passthrough();
 
 const issueOpenedPayloadSchema = z.object({
-  action: z.literal("opened"),
+  action: z.string(),
   installation: installationSchema,
   repository: repositorySchema,
   issue: issueSchema,
-});
+}).passthrough();
 
 export type ParsedIssueOpenedWebhook =
   | {
@@ -52,6 +54,7 @@ export type ParsedIssueOpenedWebhook =
   | {
       supported: false;
       reason: string;
+      diagnostics?: unknown;
       malformed?: false;
     };
 
@@ -91,42 +94,56 @@ export function parseIssueOpenedWebhook(input: {
   }
   const parsed = issueOpenedPayloadSchema.safeParse(parsedJson);
   if (!parsed.success) {
-    return { supported: false, reason: "unsupported_action_or_payload" };
+    return {
+      supported: false,
+      reason: "unsupported_action_or_payload",
+      diagnostics: parsed.error.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    };
   }
 
   const payload = parsed.data;
+  if (payload.action !== "opened") {
+    return { supported: false, reason: "unsupported_action" };
+  }
+
   if (payload.repository.private) {
     return { supported: false, reason: "private_repository" };
   }
 
   const account = payload.installation.account ?? payload.repository.owner;
   const [owner, name] = splitRepositoryFullName(payload.repository.full_name);
+  const htmlUrl = payload.repository.html_url ?? `https://github.com/${payload.repository.full_name}`;
+  const cloneUrl = payload.repository.clone_url ?? `${htmlUrl}.git`;
+  const issueAuthor = payload.issue.user?.login ?? "unknown";
 
   return {
     supported: true,
     jobInput: {
       githubDeliveryId: input.deliveryId,
       installation: {
-        githubInstallationId: String(payload.installation.id),
+        githubInstallationId: payload.installation.id,
         accountLogin: account.login,
         accountType: account.type,
       },
       repository: {
-        githubRepositoryId: String(payload.repository.id),
+        githubRepositoryId: payload.repository.id,
         owner,
         name,
         fullName: payload.repository.full_name,
-        defaultBranch: payload.repository.default_branch,
-        cloneUrl: payload.repository.clone_url,
-        htmlUrl: payload.repository.html_url,
+        defaultBranch: payload.repository.default_branch ?? "main",
+        cloneUrl,
+        htmlUrl,
         isPrivate: payload.repository.private,
       },
       issue: {
-        githubIssueId: String(payload.issue.id),
+        githubIssueId: payload.issue.id,
         number: payload.issue.number,
         title: payload.issue.title,
         body: payload.issue.body ?? "",
-        authorLogin: payload.issue.user.login,
+        authorLogin: issueAuthor,
         state: payload.issue.state,
       },
     },

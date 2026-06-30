@@ -34,7 +34,10 @@ export function createApp(dependencies: CreateAppDependencies) {
         return c.json({ error: "invalid JSON payload" }, 400);
       }
 
-      dependencies.logger.info({ eventName, deliveryId, reason: parsed.reason }, "ignored GitHub webhook");
+      dependencies.logger.info(
+        { eventName, deliveryId, reason: parsed.reason, diagnostics: parsed.diagnostics },
+        "ignored GitHub webhook",
+      );
       return c.json({ accepted: false, reason: parsed.reason }, 202);
     }
 

@@ -13,18 +13,19 @@ export function issueOpenedPayload(overrides?: {
   action?: string;
   privateRepository?: boolean;
   body?: string | null;
+  minimalRepository?: boolean;
 }) {
-  return {
+  const payload = {
     action: overrides?.action ?? "opened",
     installation: {
-      id: 123,
+      id: "123",
       account: {
         login: "maintainer",
         type: "User",
       },
     },
     repository: {
-      id: 456,
+      id: "456",
       name: "demo",
       full_name: "maintainer/demo",
       private: overrides?.privateRepository ?? false,
@@ -48,4 +49,12 @@ export function issueOpenedPayload(overrides?: {
       state: "open",
     },
   };
+
+  if (overrides?.minimalRepository) {
+    delete (payload.repository as Partial<typeof payload.repository>).default_branch;
+    delete (payload.repository as Partial<typeof payload.repository>).clone_url;
+    delete (payload.repository as Partial<typeof payload.repository>).html_url;
+  }
+
+  return payload;
 }
