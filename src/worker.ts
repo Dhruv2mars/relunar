@@ -1,4 +1,4 @@
-import { loadConfig } from "./config";
+import { loadWorkerConfig } from "./config";
 import { createDb } from "./db/client";
 import { PostgresRelunarStore } from "./db/store";
 import { GitHubAppClient } from "./github/client";
@@ -7,7 +7,7 @@ import { createPgBoss, reproQueueName, type ReproJobMessage } from "./queue";
 import { DaytonaSandboxProvider } from "./sandbox/daytona";
 import { processReproJob } from "./worker-core";
 
-const config = loadConfig();
+const config = loadWorkerConfig();
 const logger = createLogger(config.LOG_LEVEL);
 const { db } = createDb(config.DATABASE_URL);
 const boss = await createPgBoss(config.DATABASE_URL);
