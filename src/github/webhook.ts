@@ -46,7 +46,13 @@ export type ParsedIssueOpenedWebhook =
     }
   | {
       supported: false;
+      reason: "invalid_json";
+      malformed: true;
+    }
+  | {
+      supported: false;
       reason: string;
+      malformed?: false;
     };
 
 export function verifyGitHubSignature(rawBody: string, signatureHeader: string | null, secret: string): boolean {
@@ -77,7 +83,12 @@ export function parseIssueOpenedWebhook(input: {
     return { supported: false, reason: "missing_delivery_id" };
   }
 
-  const parsedJson = JSON.parse(input.rawBody) as unknown;
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(input.rawBody) as unknown;
+  } catch {
+    return { supported: false, reason: "invalid_json", malformed: true };
+  }
   const parsed = issueOpenedPayloadSchema.safeParse(parsedJson);
   if (!parsed.success) {
     return { supported: false, reason: "unsupported_action_or_payload" };

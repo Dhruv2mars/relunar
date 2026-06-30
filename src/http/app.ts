@@ -29,6 +29,11 @@ export function createApp(dependencies: CreateAppDependencies) {
 
     const parsed = parseIssueOpenedWebhook({ eventName, deliveryId, rawBody });
     if (!parsed.supported) {
+      if (parsed.malformed) {
+        dependencies.logger.warn({ eventName, deliveryId, reason: parsed.reason }, "rejected malformed GitHub webhook");
+        return c.json({ error: "invalid JSON payload" }, 400);
+      }
+
       dependencies.logger.info({ eventName, deliveryId, reason: parsed.reason }, "ignored GitHub webhook");
       return c.json({ accepted: false, reason: parsed.reason }, 202);
     }
