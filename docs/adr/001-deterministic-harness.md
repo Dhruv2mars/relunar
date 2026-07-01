@@ -1,4 +1,4 @@
-# ADR 001: Build Relunar As A Deterministic Harness First
+# ADR 001: Build Relunar As A Local CLI Harness
 
 ## Status
 
@@ -6,106 +6,74 @@ Accepted
 
 ## Date
 
-2026-06-30
+2026-07-01
 
 ## Context
 
-Relunar's goal is to help open source maintainers understand whether a GitHub issue can be reproduced in a clean environment. Maintainers need concrete evidence, not broad automation or speculative summaries.
+Relunar helps maintainers reproduce GitHub issues with evidence from a clean environment. The first product direction was a server-first GitHub bot with webhooks, a queue, and hosted infrastructure.
 
-The long-term product may include AI-assisted planning, issue-specific repro attempts, browser automation, and richer reporting. The first milestone should prove the core system without adding autonomy or model behavior.
+That shape adds cost and trust burden before the workflow is proven:
 
-The system must be easy to trust:
+- Relunar would need hosted infrastructure.
+- Relunar would custody long-lived integration secrets.
+- Maintainers would need to trust background automation.
+- Coding agents would still be the natural driver for issue selection and follow-up.
 
-- commands must be visible
-- exit codes must be recorded
-- logs must be attached or summarized
-- status classification must be explainable
-- GitHub writes must be deterministic
-- sandbox execution must be bounded
+The stronger v1 shape is local and agent-native. A maintainer asks a coding agent to investigate issues; the agent calls a deterministic CLI harness.
 
 ## Decision
 
-Relunar will start as a deterministic repro harness.
+Relunar v1 is a CLI-first repro harness.
 
-For milestone 1:
+Relunar will:
 
-- no AI planner
-- no AI reporter
-- no autonomous agent loop
-- no issue-body command execution
-- no code edits
-- no fix PRs
-- no labels
-- no dashboard
+1. run on the maintainer machine
+2. use the maintainer GitHub credentials
+3. use the maintainer Daytona credentials
+4. fetch issues through GitHub API
+5. create short-lived Daytona sandboxes
+6. clone the linked repository
+7. run `.relunar.yml` setup and baseline commands
+8. write local JSON, markdown, and logs
+9. post GitHub comments only when `--comment` is explicit
+10. clean up sandbox resources
 
-The harness will:
-
-1. receive `issues.opened`
-2. create a durable job
-3. run baseline commands in Daytona
-4. store command evidence
-5. classify result through deterministic rules
-6. post one GitHub issue comment
+Relunar will not include a hosted app, queue, database, webhook receiver, dashboard, or built-in AI agent in v1.
 
 ## Consequences
 
 ### Positive
 
-- Lower implementation risk.
-- Lower product ambiguity.
-- Maintainer-facing output is grounded in observed commands.
-- Easier debugging when runs fail.
-- Easier security review because execution paths are fixed.
-- AI can be added later behind stable interfaces.
+- No hosted v1 infrastructure.
+- No central Relunar custody of secrets.
+- Lower operational cost.
+- Easier OSS trust story.
+- Agent workflows stay composable and visible.
+- Reports remain deterministic and inspectable.
 
 ### Negative
 
-- Milestone 1 cannot reproduce most issue-specific bugs.
-- Comments may be useful but limited.
-- Some repositories will fail because zero-config setup cannot know project-specific requirements.
-- No natural-language interpretation of vague issues in the first milestone.
+- Maintainer machine must initiate runs.
+- No automatic webhook mode in v1.
+- Daytona account setup is required per user.
+- Batch throughput is intentionally modest.
 
 ### Neutral
 
-- The first milestone is a platform proof, not the final product promise.
-- The comment must clearly say "baseline report" to avoid overclaiming.
+- Hosted automation can come later after the CLI workflow proves value.
+- The CLI can later expose an MCP server without changing core run semantics.
+- Browser repro can be added later through Playwright or agent-browser.
 
 ## Alternatives Considered
 
-### Agent First
+### Hosted GitHub App First
 
-An autonomous agent could inspect the issue, choose commands, iterate, and attempt deeper reproduction from day one.
+Rejected for v1. It creates infrastructure, queueing, secret custody, and webhook complexity before validating maintainer demand.
 
-Rejected for milestone 1 because it increases risk, makes status harder to trust, and creates more surface area before the core pipeline is proven.
+### Built-in AI Agent
 
-### LLM Planner With Harness
+Rejected for v1. Relunar should be the harness, not the agent. Codex, Cursor, Claude Code, and other agents can decide issue priority and follow-up strategy.
 
-An LLM could produce a JSON repro plan while deterministic code still owns execution.
+### Local CLI Without Sandbox
 
-Deferred. This may be a good later step, but the first milestone should work without model dependency.
-
-### GitHub Comment Bot Without Sandbox
-
-Relunar could parse issues and comment with requested missing information without running code.
-
-Rejected because Relunar's core value is evidence from a clean environment. A comment-only bot is too close to generic triage.
-
-### Full Triage Platform
-
-Relunar could include labels, dashboards, prioritization, analytics, auto-closing, and fix PRs.
-
-Rejected because the product principle is simplicity. The first useful unit is a repro evidence comment.
-
-## Future Extension
-
-AI may be added later as a bounded planner or reporter. If added, the harness must still own:
-
-- allowed commands
-- timeouts
-- sandbox lifecycle
-- status classification
-- GitHub writes
-- evidence storage
-
-The architecture should make AI replaceable, optional, and unable to mutate external state directly.
-
+Rejected. Clean sandbox execution is core to trusted repro evidence.

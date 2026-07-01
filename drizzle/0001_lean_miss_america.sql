@@ -1,1 +1,0 @@
-ALTER TYPE "public"."command_phase" ADD VALUE 'setup' BEFORE 'build';

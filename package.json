@@ -1,5 +1,5 @@
 {
-  "name": "relunar",
+  "name": "relunar-repo",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,32 +7,20 @@
   "engines": {
     "node": ">=22.12.0"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev:api": "bun --watch src/api.ts",
-    "dev:worker": "bun --watch src/worker.ts",
-    "start:api": "bun src/api.ts",
-    "start:worker": "bun src/worker.ts",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "smoke:e2e": "bun src/scripts/e2e-smoke.ts",
-    "verify": "bun test && bun run typecheck"
-  },
-  "dependencies": {
-    "@daytona/sdk": "^0.192.0",
-    "@octokit/app": "^16.1.2",
-    "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.27",
-    "pg-boss": "^12.23.1",
-    "pino": "^10.3.1",
-    "postgres": "^3.4.9",
-    "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "verify": "turbo run test typecheck build",
+    "release:tag": "node scripts/release-tag.mjs"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
-    "drizzle-kit": "^0.31.10",
+    "turbo": "^2.8.4",
     "typescript": "^6.0.3"
   }
 }
