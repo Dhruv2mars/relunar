@@ -1,109 +1,129 @@
 # Relunar
 
-Relunar is a deterministic GitHub App harness for OSS maintainers. When a new issue is opened, it queues a baseline run, executes repository setup/build/test in a Daytona sandbox, stores evidence in Postgres, and posts one compact GitHub issue comment.
+Relunar is a CLI-first repro harness for coding agents.
 
-Milestone 1 does not attempt issue-specific reproduction and does not use AI.
+Ask Codex, Cursor, Claude Code, or another coding agent to reproduce GitHub issues. Relunar handles deterministic plumbing: GitHub issue reads, Daytona sandbox creation, repository clone, configured commands, local reports, logs, cleanup, and optional GitHub issue comments.
 
-## Stack
+Relunar is a harness, not an agent. Your coding agent decides which issues matter, whether extra context is needed, and when a report is good enough.
 
-- Bun + TypeScript
-- Hono API service
-- Postgres + Drizzle
-- pg-boss queue
-- GitHub App + Octokit
-- Daytona sandbox
-- Pino logs
+## Why CLI-first
 
-## Services
+- No hosted service in v1.
+- No central Relunar custody of user secrets.
+- Maintainers use their own GitHub and Daytona accounts.
+- Commands are visible, local, and composable.
+- GitHub comments are explicit with `--comment`.
 
-```txt
-api: bun run start:api
-worker: bun run start:worker
-```
-
-The API service receives GitHub webhooks at:
-
-```txt
-POST /webhooks/github
-GET /health
-```
-
-The worker drains ready `repro_jobs` once, posts baseline reports, closes database connections, and exits. On Railway, configure the worker service as a cron job instead of an always-on service.
-
-Recommended worker cron:
-
-```txt
-*/5 * * * *
-```
-
-This checks for queued work every 5 minutes, which is Railway's minimum cron frequency. If no jobs are ready, the worker exits quickly.
-
-## Repository Config
-
-Relunar supports an optional `.relunar.yml` file at the repository root.
-
-```yaml
-setup:
-  - bun run generate
-  - bun run db:prepare
-```
-
-`setup` must be an array of command strings. Commands run after dependency install and before detected build/test scripts. Each setup command is executed in the Daytona sandbox, recorded as evidence, and shown in the GitHub comment.
-
-If `.relunar.yml` is invalid or a setup command fails, Relunar stops the run and reports a blocked baseline. Relunar still does not read commands from issue bodies, inject maintainer secrets, edit repository source, create pull requests, or use AI.
-
-## Environment
-
-Copy `.env.example` values into Railway service variables:
-
-```txt
-DATABASE_URL
-GITHUB_APP_ID
-GITHUB_PRIVATE_KEY
-GITHUB_WEBHOOK_SECRET
-DAYTONA_API_KEY
-DAYTONA_API_URL
-DAYTONA_TARGET
-PORT
-LOG_LEVEL
-JOB_TIMEOUT_SECONDS
-COMMAND_TIMEOUT_SECONDS
-WORKER_BATCH_SIZE
-WORKER_MAX_JOBS
-```
-
-## Database
-
-Generate migrations after schema edits:
+## Install
 
 ```sh
-bun run db:generate
+bun install
+bun --cwd packages/cli src/index.ts help
 ```
 
-Apply migrations:
-
-```sh
-bun run db:migrate
-```
-
-pg-boss creates its own queue schema on service startup.
-
-## Verification
+During local development:
 
 ```sh
 bun run verify
 ```
 
-This runs Bun tests and TypeScript typechecking.
-
-## Live Smoke
-
-After the GitHub App is installed on a public JavaScript or TypeScript test repository and Railway has the required environment variables, run:
+## Quick Start
 
 ```sh
-E2E_GITHUB_TOKEN=github_pat_value \
-E2E_REPOSITORY=owner/repo \
-bun run smoke:e2e
+relunar init
+relunar auth github
+relunar auth daytona --api-key "$RELUNAR_DAYTONA_API_KEY"
+relunar repo link owner/repo
+relunar doctor
+relunar issues list --state open --json
+relunar repro 123
+relunar repro 123 --comment
 ```
 
-The smoke script creates a GitHub issue and waits for a Relunar baseline report comment. It exits non-zero if no report appears before the timeout.
+Batch mode stays explicit:
+
+```sh
+relunar repro --all-open --limit 5
+relunar repro --all-open --limit 5 --comment
+```
+
+## Repository Config
+
+Create `.relunar.yml` in the target repository:
+
+```yaml
+version: 1
+
+setup:
+  - bun install
+
+baseline:
+  - bun run typecheck
+  - bun test
+
+report:
+  maxLogLines: 200
+```
+
+Relunar clones the linked GitHub repo into a Daytona sandbox, reads `.relunar.yml`, runs `setup`, then runs `baseline`. It writes reports locally:
+
+```txt
+.relunar/runs/<run-id>/
+  report.md
+  report.json
+  logs.txt
+```
+
+## Auth
+
+GitHub token resolution:
+
+1. `RELUNAR_GITHUB_TOKEN`
+2. `gh auth token`
+3. OS keychain value saved by `relunar auth github --token <token>`
+
+Daytona API key resolution:
+
+1. `RELUNAR_DAYTONA_API_KEY`
+2. OS keychain value saved by `relunar auth daytona --api-key <key>`
+
+Non-secret local settings live in:
+
+```txt
+~/.config/relunar/config.json
+```
+
+Secrets are never stored in the repository.
+
+## Commands
+
+```txt
+relunar init
+relunar doctor
+relunar auth github
+relunar auth daytona
+relunar repo link owner/repo
+relunar issues list --state open --json
+relunar repro 123
+relunar repro 123 --comment
+relunar repro --all-open --limit 5
+relunar runs list
+relunar runs show <run-id>
+relunar skills list
+relunar skills get codex
+relunar skills install codex
+```
+
+## Monorepo
+
+```txt
+packages/cli  Relunar CLI
+```
+
+Turborepo runs builds, tests, and typechecking:
+
+```sh
+bun run build
+bun run test
+bun run typecheck
+```

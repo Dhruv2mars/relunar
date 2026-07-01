@@ -1,2 +1,11 @@
+version: 1
+
 setup:
+  - bun install
+
+baseline:
   - bun run typecheck
+  - bun test
+
+report:
+  maxLogLines: 200

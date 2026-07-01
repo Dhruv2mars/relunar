@@ -1,0 +1,25 @@
+{
+  "name": "relunar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "relunar": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --target=node --format=esm --outdir=dist",
+    "dev": "bun src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@daytona/sdk": "^0.192.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3"
+  }
+}
