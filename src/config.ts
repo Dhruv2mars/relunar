@@ -18,6 +18,8 @@ const workerEnvSchema = baseEnvSchema.extend({
   DAYTONA_TARGET: z.string().min(1).optional(),
   JOB_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(900),
   COMMAND_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(300),
+  WORKER_BATCH_SIZE: z.coerce.number().int().positive().default(1),
+  WORKER_MAX_JOBS: z.coerce.number().int().positive().default(5),
 });
 
 export type ApiConfig = z.infer<typeof apiEnvSchema>;

@@ -36,7 +36,7 @@ The API service does not run repro commands.
 
 Responsibilities:
 
-- claim queued jobs
+- claim queued jobs during scheduled drain runs
 - create Daytona sandbox
 - clone target repository
 - detect package manager and scripts
@@ -48,6 +48,8 @@ Responsibilities:
 - persist final job state
 
 The worker is the only service that talks to Daytona.
+
+The worker is intentionally one-shot for early production cost control. It fetches ready jobs, processes up to a configured maximum, closes pg-boss and database connections, then exits. Railway should run it as a cron service rather than a 24/7 background worker.
 
 ## Postgres
 
@@ -100,6 +102,8 @@ baseline_failed
 blocked
 run_failed
 ```
+
+Queue delivery state is managed by pg-boss. The scheduled worker fetches ready queue jobs, completes each queue job after a successful Relunar run, and fails the queue job if processing throws so pg-boss retry policy can apply.
 
 ## Repro Runner
 
@@ -230,7 +234,7 @@ Railway project:
 
 ```txt
 api service
-worker service
+worker cron service
 postgres service
 ```
 
@@ -242,6 +246,14 @@ Suggested start commands:
 api: bun run start:api
 worker: bun run start:worker
 ```
+
+Worker schedule:
+
+```txt
+*/5 * * * *
+```
+
+Railway cron services must terminate after work completes. The worker closes open resources before exit so later scheduled runs are not skipped.
 
 ## Observability
 

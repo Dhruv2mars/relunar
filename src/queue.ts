@@ -1,4 +1,5 @@
 import { PgBoss } from "pg-boss";
+import type { DrainQueueJob, DrainableReproQueue } from "./worker-drain";
 
 export const reproQueueName = "repro_jobs";
 
@@ -25,6 +26,23 @@ export class PgBossReproQueue implements ReproQueue {
     }
 
     return id;
+  }
+}
+
+export class PgBossDrainableReproQueue implements DrainableReproQueue {
+  constructor(private readonly boss: PgBoss) {}
+
+  async fetch(batchSize: number): Promise<DrainQueueJob[]> {
+    return await this.boss.fetch<ReproJobMessage>(reproQueueName, { batchSize });
+  }
+
+  async complete(queueJobId: string): Promise<void> {
+    await this.boss.complete(reproQueueName, queueJobId);
+  }
+
+  async fail(queueJobId: string, error?: unknown): Promise<void> {
+    const message = error instanceof Error ? error.message : "unknown worker drain error";
+    await this.boss.fail(reproQueueName, queueJobId, { error: message });
   }
 }
 
