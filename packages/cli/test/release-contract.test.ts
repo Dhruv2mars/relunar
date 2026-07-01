@@ -24,6 +24,8 @@ describe("release contract", () => {
     expect(workflow).toContain('- "v*"');
     expect(workflow).toContain("tag/version mismatch");
     expect(workflow).toContain("npm publish --provenance --access public");
+    expect(workflow).toContain("NPM_TOKEN");
+    expect(workflow).toContain("npm publish --access public");
     expect(workflow).toContain("id-token: write");
   });
 

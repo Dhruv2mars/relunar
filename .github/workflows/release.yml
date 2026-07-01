@@ -76,6 +76,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -105,6 +107,12 @@ jobs:
           rc="${RUNNER_TEMP:-/tmp}/npmrc"
           echo "registry=https://registry.npmjs.org/" > "$rc"
           export NPM_CONFIG_USERCONFIG="$rc"
-          unset NODE_AUTH_TOKEN || true
           cd packages/cli
-          npm publish --provenance --access public
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> "$rc"
+            export NODE_AUTH_TOKEN="${NPM_TOKEN}"
+            npm publish --access public
+          else
+            unset NODE_AUTH_TOKEN || true
+            npm publish --provenance --access public
+          fi
