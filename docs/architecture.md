@@ -12,10 +12,22 @@ packages/cli
   src/reports.ts      markdown/json report rendering
   src/config.ts       .relunar.yml and global config
   src/credentials.ts  env, gh, keychain credential resolution
+  src/setup.ts        first-run interactive setup
   src/skills.ts       agent instruction surface
 ```
 
 Relunar keeps external systems behind adapters. Tests use fake sandbox sessions and public CLI entrypoints.
+
+## Install Flow
+
+```txt
+npm install -g relunar
+relunar
+  -> setup prompt if GitHub or Daytona auth is missing
+  -> save secrets to OS keychain when supported
+  -> save non-secret Daytona settings to ~/.config/relunar/config.json
+  -> optional repo link for current directory
+```
 
 ## Run Flow
 

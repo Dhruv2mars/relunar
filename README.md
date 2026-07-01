@@ -17,8 +17,8 @@ Relunar is a harness, not an agent. Your coding agent decides which issues matte
 ## Install
 
 ```sh
-bun install
-bun --cwd packages/cli src/index.ts help
+npm install -g relunar
+relunar
 ```
 
 During local development:
@@ -30,9 +30,8 @@ bun run verify
 ## Quick Start
 
 ```sh
-relunar init
-relunar auth github
-relunar auth daytona --api-key "$RELUNAR_DAYTONA_API_KEY"
+relunar
+relunar setup
 relunar repo link owner/repo
 relunar doctor
 relunar issues list --state open --json
@@ -99,6 +98,7 @@ Secrets are never stored in the repository.
 
 ```txt
 relunar init
+relunar setup
 relunar doctor
 relunar auth github
 relunar auth daytona
@@ -119,6 +119,8 @@ relunar skills install codex
 ```txt
 packages/cli  Relunar CLI
 ```
+
+The published npm package is `relunar`. It ships the compiled `dist/index.js` binary and is released from tags like `v0.1.0`.
 
 Turborepo runs builds, tests, and typechecking:
 

@@ -6,6 +6,7 @@ setup:
 baseline:
   - bun run typecheck
   - bun test
+  - bun run build
 
 report:
   maxLogLines: 200

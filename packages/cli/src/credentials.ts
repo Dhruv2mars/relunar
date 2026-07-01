@@ -12,9 +12,11 @@ export async function resolveGithubToken(env: NodeJS.ProcessEnv = process.env): 
     return env.RELUNAR_GITHUB_TOKEN;
   }
 
-  const ghToken = await readGhAuthToken();
-  if (ghToken) {
-    return ghToken;
+  if (env.RELUNAR_SKIP_GH_AUTH_TOKEN !== "1") {
+    const ghToken = await readGhAuthToken();
+    if (ghToken) {
+      return ghToken;
+    }
   }
 
   return readSecret("github-token");

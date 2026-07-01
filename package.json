@@ -15,7 +15,8 @@
     "dev": "turbo run dev",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "verify": "turbo run test typecheck build"
+    "verify": "turbo run test typecheck build",
+    "release:tag": "node scripts/release-tag.mjs"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

@@ -4,6 +4,7 @@
 
 - Turborepo monorepo with `packages/cli`.
 - `relunar init`
+- `relunar setup`
 - `relunar doctor`
 - `relunar auth github`
 - `relunar auth daytona`
@@ -15,6 +16,7 @@
 - `relunar runs list`
 - `relunar runs show <run-id>`
 - `relunar skills list|get|install`
+- npm package release path for `relunar`
 
 ## Report Outputs
 

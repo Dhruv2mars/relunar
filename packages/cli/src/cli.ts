@@ -9,8 +9,10 @@ import { GitHubClient } from "./github";
 import { renderMarkdownReport } from "./reports";
 import { runRepro } from "./repro";
 import { listRuns, readRun, runStoreDir } from "./runs";
+import { readSetupStatus, runInteractiveSetup, type SetupPrompter } from "./setup";
 import { getSkill, installSkill, isSupportedSkill, supportedSkills } from "./skills";
 import type { RepoSlug, RunReport } from "./types";
+import type { SecretName } from "./credentials";
 
 export type CliIO = {
   stdout(message: string): void;
@@ -21,6 +23,9 @@ export type CliDeps = {
   cwd: string;
   env: NodeJS.ProcessEnv;
   io: CliIO;
+  prompt?: SetupPrompter | undefined;
+  secretWriter?: ((name: SecretName, value: string) => Promise<void>) | undefined;
+  isInteractive?: boolean | undefined;
 };
 
 export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
@@ -28,7 +33,11 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   const [command, subcommand, third] = positionals;
 
   try {
-    if (!command || command === "help" || flagBoolean(flags, "help")) {
+    if (!command) {
+      return await start(deps);
+    }
+
+    if (command === "help" || flagBoolean(flags, "help")) {
       deps.io.stdout(helpText());
       return 0;
     }
@@ -41,6 +50,19 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
 
     if (command === "doctor") {
       return await doctor(deps, flags);
+    }
+
+    if (command === "setup") {
+      return (await runInteractiveSetup({
+        cwd: deps.cwd,
+        env: deps.env,
+        configPath: configPath(deps),
+        io: deps.io,
+        prompt: deps.prompt,
+        secretWriter: deps.secretWriter,
+      }))
+        ? 0
+        : 1;
     }
 
     if (command === "auth") {
@@ -77,6 +99,33 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     deps.io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
     return 1;
   }
+}
+
+async function start(deps: CliDeps): Promise<number> {
+  deps.io.stdout("Relunar CLI\n");
+  const status = await readSetupStatus({ cwd: deps.cwd, env: deps.env, configPath: configPath(deps) });
+  if (status.github && status.daytona) {
+    deps.io.stdout("Setup complete. Useful next commands:\n");
+    deps.io.stdout("  relunar doctor\n  relunar repo link owner/repo\n  relunar issues list --state open --json\n  relunar repro 123\n");
+    return 0;
+  }
+
+  const interactive = deps.prompt !== undefined || deps.isInteractive === true || (deps.isInteractive === undefined && process.stdin.isTTY && process.stdout.isTTY);
+  if (interactive) {
+    return (await runInteractiveSetup({
+      cwd: deps.cwd,
+      env: deps.env,
+      configPath: configPath(deps),
+      io: deps.io,
+      prompt: deps.prompt,
+      secretWriter: deps.secretWriter,
+    }))
+      ? 0
+      : 1;
+  }
+
+  deps.io.stdout("Setup incomplete. Run `relunar setup` in an interactive shell.\n");
+  return 1;
 }
 
 async function doctor(deps: CliDeps, flags: Record<string, string | boolean>): Promise<number> {
@@ -292,6 +341,7 @@ function helpText(): string {
 
 Commands:
   relunar init
+  relunar setup
   relunar doctor [--json]
   relunar auth github [--token <token>]
   relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
