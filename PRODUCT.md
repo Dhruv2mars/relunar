@@ -91,7 +91,7 @@ Milestone 1 does not use `reproduced` because no issue-specific reproduction is 
 Relunar is a GitHub App with two deployed services:
 
 - `api`: receives GitHub webhooks, verifies signatures, stores jobs, and handles GitHub App integration.
-- `worker`: consumes jobs, runs repro work in Daytona, stores evidence, and posts comments.
+- `worker`: drains queued jobs on a schedule, runs repro work in Daytona, stores evidence, posts comments, and exits.
 
 Postgres stores durable state for installations, repositories, issues, jobs, command runs, and comments.
 

@@ -28,7 +28,15 @@ POST /webhooks/github
 GET /health
 ```
 
-The worker consumes `repro_jobs` from pg-boss and posts the baseline report.
+The worker drains ready `repro_jobs` once, posts baseline reports, closes database connections, and exits. On Railway, configure the worker service as a cron job instead of an always-on service.
+
+Recommended worker cron:
+
+```txt
+*/5 * * * *
+```
+
+This checks for queued work every 5 minutes, which is Railway's minimum cron frequency. If no jobs are ready, the worker exits quickly.
 
 ## Repository Config
 
@@ -60,6 +68,8 @@ PORT
 LOG_LEVEL
 JOB_TIMEOUT_SECONDS
 COMMAND_TIMEOUT_SECONDS
+WORKER_BATCH_SIZE
+WORKER_MAX_JOBS
 ```
 
 ## Database

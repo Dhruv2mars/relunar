@@ -103,6 +103,8 @@ Recommended job result values:
 19. Worker posts comment.
 20. Worker marks job completed or failed.
 
+The worker can run as a scheduled one-shot process. For the current Railway deployment, this is preferred over a permanently running background worker because Relunar only needs to process issues shortly after GitHub webhooks arrive.
+
 ## Classification Rules
 
 `baseline_passed`:

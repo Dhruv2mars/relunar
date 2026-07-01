@@ -3,13 +3,14 @@ import { createDb } from "./db/client";
 import { PostgresRelunarStore } from "./db/store";
 import { GitHubAppClient } from "./github/client";
 import { createLogger } from "./logger";
-import { createPgBoss, reproQueueName, type ReproJobMessage } from "./queue";
+import { createPgBoss, PgBossDrainableReproQueue, reproQueueName } from "./queue";
 import { DaytonaSandboxProvider } from "./sandbox/daytona";
+import { drainReproQueue } from "./worker-drain";
 import { processReproJob } from "./worker-core";
 
 const config = loadWorkerConfig();
 const logger = createLogger(config.LOG_LEVEL);
-const { db } = createDb(config.DATABASE_URL);
+const { client, db } = createDb(config.DATABASE_URL);
 const boss = await createPgBoss(config.DATABASE_URL);
 const store = new PostgresRelunarStore(db);
 const daytonaOptions: ConstructorParameters<typeof DaytonaSandboxProvider>[0] = {
@@ -27,23 +28,27 @@ const github = new GitHubAppClient({
   privateKey: config.GITHUB_PRIVATE_KEY,
 });
 
-await boss.work<ReproJobMessage>(reproQueueName, async (jobs) => {
-  for (const job of jobs) {
-    if (!job.data.jobId) {
-      throw new Error("missing job id in queue message");
-    }
-
-    await processReproJob(job.data.jobId, {
-      store,
-      sandboxProvider,
-      github,
-      logger,
-      runnerOptions: {
-        commandTimeoutSeconds: config.COMMAND_TIMEOUT_SECONDS,
-        jobTimeoutSeconds: config.JOB_TIMEOUT_SECONDS,
-      },
-    });
-  }
-});
-
-logger.info({ queue: reproQueueName }, "relunar worker started");
+try {
+  const result = await drainReproQueue({
+    queue: new PgBossDrainableReproQueue(boss),
+    batchSize: config.WORKER_BATCH_SIZE,
+    maxJobs: config.WORKER_MAX_JOBS,
+    logger,
+    processJob: async (jobId) => {
+      await processReproJob(jobId, {
+        store,
+        sandboxProvider,
+        github,
+        logger,
+        runnerOptions: {
+          commandTimeoutSeconds: config.COMMAND_TIMEOUT_SECONDS,
+          jobTimeoutSeconds: config.JOB_TIMEOUT_SECONDS,
+        },
+      });
+    },
+  });
+  logger.info({ queue: reproQueueName, ...result }, "relunar worker drain finished");
+} finally {
+  await boss.stop();
+  await client.end();
+}
