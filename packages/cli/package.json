@@ -1,5 +1,5 @@
 {
-  "name": "relunar",
+  "name": "@dhruv2mars/relunar",
   "version": "0.1.0",
   "description": "CLI-first GitHub issue repro harness for coding agents",
   "type": "module",

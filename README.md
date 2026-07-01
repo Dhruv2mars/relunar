@@ -17,7 +17,7 @@ Relunar is a harness, not an agent. Your coding agent decides which issues matte
 ## Install
 
 ```sh
-npm install -g relunar
+npm install -g @dhruv2mars/relunar
 relunar
 ```
 
@@ -120,7 +120,7 @@ relunar skills install codex
 packages/cli  Relunar CLI
 ```
 
-The published npm package is `relunar`. It ships the compiled `dist/index.js` binary and is released from tags like `v0.1.0`.
+The published npm package is `@dhruv2mars/relunar`. It ships the `relunar` executable from compiled `dist/index.js` and is released from tags like `v0.1.0`.
 
 Turborepo runs builds, tests, and typechecking:
 

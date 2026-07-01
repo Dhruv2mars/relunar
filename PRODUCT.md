@@ -48,5 +48,5 @@ maintainer laptop
 - No plaintext secrets in repo.
 - Daytona credentials belong to each user.
 - Relunar writes structured JSON and markdown for agents to consume.
-- The CLI is installed from npm as `relunar`.
+- The CLI is installed from npm as `@dhruv2mars/relunar` and exposes the `relunar` command.
 - First launch runs setup prompts for GitHub and Daytona auth.

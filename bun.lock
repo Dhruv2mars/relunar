@@ -11,10 +11,10 @@
       },
     },
     "packages/cli": {
-      "name": "relunar",
+      "name": "@dhruv2mars/relunar",
       "version": "0.1.0",
       "bin": {
-        "relunar": "./src/index.ts",
+        "relunar": "dist/index.js",
       },
       "dependencies": {
         "@daytona/sdk": "^0.192.0",
@@ -89,6 +89,8 @@
     "@daytona/sdk": ["@daytona/sdk@0.192.0", "", { "dependencies": { "@aws-sdk/client-s3": "^3.787.0", "@aws-sdk/lib-storage": "^3.798.0", "@daytona/api-client": "0.192.0", "@daytona/toolbox-api-client": "0.192.0", "@iarna/toml": "^2.2.5", "@opentelemetry/api": "^1.9.0", "@opentelemetry/exporter-trace-otlp-http": "^0.217.0", "@opentelemetry/instrumentation-http": "^0.217.0", "@opentelemetry/otlp-exporter-base": "0.217.0", "@opentelemetry/resources": "2.7.1", "@opentelemetry/sdk-node": "^0.217.0", "@opentelemetry/sdk-trace-base": "^2.7.1", "@opentelemetry/semantic-conventions": "^1.40.0", "axios": "^1.15.2", "busboy": "^1.0.0", "dotenv": "^17.0.1", "expand-tilde": "^2.0.2", "fast-glob": "^3.3.0", "form-data": "^4.0.4", "isomorphic-ws": "^5.0.0", "pathe": "^2.0.3", "shell-quote": "^1.8.2", "tar": "^7.5.11" } }, "sha512-pAA1curJCiZ0rqZcE0BUIjsgS90QdDFZ2QYw8nVWwGjjdr+Fndof4MaJfoZRjpcMHjUBoqEZpzO9C5HPv38QeA=="],
 
     "@daytona/toolbox-api-client": ["@daytona/toolbox-api-client@0.192.0", "", { "dependencies": { "axios": "^1.6.1" } }, "sha512-fEyA3YPK+IJezECBfZoNhf29qtZhy8AqI0lcgR+Bob6hEiInx9+sH26506ZkxmpGM4/5EApeLzUI1g5B9u2XHA=="],
+
+    "@dhruv2mars/relunar": ["@dhruv2mars/relunar@workspace:packages/cli"],
 
     "@grpc/grpc-js": ["@grpc/grpc-js@1.14.4", "", { "dependencies": { "@grpc/proto-loader": "^0.8.0", "@js-sdsl/ordered-map": "^4.4.2" } }, "sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ=="],
 
@@ -369,8 +371,6 @@
     "queue-microtask": ["queue-microtask@1.2.3", "", {}, "sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A=="],
 
     "readable-stream": ["readable-stream@3.6.2", "", { "dependencies": { "inherits": "^2.0.3", "string_decoder": "^1.1.1", "util-deprecate": "^1.0.1" } }, "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA=="],
-
-    "relunar": ["relunar@workspace:packages/cli"],
 
     "require-directory": ["require-directory@2.1.1", "", {}, "sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q=="],
 

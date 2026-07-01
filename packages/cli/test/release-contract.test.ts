@@ -9,7 +9,7 @@ describe("release contract", () => {
   test("package is npm publishable as relunar CLI", () => {
     const packageJson = JSON.parse(readFileSync(join(repoRoot, "packages", "cli", "package.json"), "utf8"));
 
-    expect(packageJson.name).toBe("relunar");
+    expect(packageJson.name).toBe("@dhruv2mars/relunar");
     expect(packageJson.private).toBeUndefined();
     expect(packageJson.bin.relunar).toBe("dist/index.js");
     expect(packageJson.files).toContain("dist");
@@ -23,6 +23,7 @@ describe("release contract", () => {
     expect(workflow).toContain("tags:");
     expect(workflow).toContain('- "v*"');
     expect(workflow).toContain("tag/version mismatch");
+    expect(workflow).toContain("npm view @dhruv2mars/relunar version");
     expect(workflow).toContain("npm publish --provenance --access public");
     expect(workflow).toContain("NPM_TOKEN");
     expect(workflow).toContain("npm publish --access public");

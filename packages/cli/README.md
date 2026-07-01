@@ -3,7 +3,7 @@
 Relunar is a CLI-first GitHub issue repro harness for coding agents.
 
 ```sh
-npm install -g relunar
+npm install -g @dhruv2mars/relunar
 relunar
 ```
 

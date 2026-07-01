@@ -16,7 +16,7 @@
 - `relunar runs list`
 - `relunar runs show <run-id>`
 - `relunar skills list|get|install`
-- npm package release path for `relunar`
+- npm package release path for `@dhruv2mars/relunar`, exposing `relunar`
 
 ## Report Outputs
 

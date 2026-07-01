@@ -21,7 +21,7 @@ Relunar keeps external systems behind adapters. Tests use fake sandbox sessions 
 ## Install Flow
 
 ```txt
-npm install -g relunar
+npm install -g @dhruv2mars/relunar
 relunar
   -> setup prompt if GitHub or Daytona auth is missing
   -> save secrets to OS keychain when supported
