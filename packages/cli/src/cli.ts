@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseArgs, flagBoolean, flagNumber, flagString } from "./args";
+import { parseArgs, flagBoolean, flagNeedsValue, flagPositiveInteger, flagString } from "./args";
 import { findLinkedRepo, globalConfigPath, isRepoSlug, linkRepo, readGlobalConfig, writeGlobalConfig, writeRelunarConfig } from "./config";
 import { resolveDaytonaApiKey, resolveGithubToken, writeSecret } from "./credentials";
 import { DaytonaSandboxProvider } from "./daytona";
@@ -116,14 +116,15 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
 async function start(deps: CliDeps): Promise<number> {
   deps.io.stdout("Relunar CLI\n");
   const status = await readSetupStatus({ cwd: deps.cwd, env: deps.env, configPath: configPath(deps) });
-  if (status.github && status.daytona) {
+  const relunarConfig = existsSync(join(deps.cwd, ".relunar.yml"));
+  if (status.github && status.daytona && status.repoLinked && relunarConfig) {
     deps.io.stdout("Setup complete. Useful next commands:\n");
-    deps.io.stdout("  relunar doctor\n  relunar repo link owner/repo\n  relunar issues list --state open --json\n  relunar repro 123\n");
+    deps.io.stdout("  relunar doctor\n  relunar repo link owner/repo\n  relunar issues list --state open --limit 20 --json\n  relunar repro 123\n");
     return 0;
   }
 
   const interactive = deps.prompt !== undefined || deps.isInteractive === true || (deps.isInteractive === undefined && process.stdin.isTTY && process.stdout.isTTY);
-  if (interactive) {
+  if (interactive && (!status.github || !status.daytona)) {
     return (await runInteractiveSetup({
       cwd: deps.cwd,
       env: deps.env,
@@ -136,7 +137,7 @@ async function start(deps: CliDeps): Promise<number> {
       : 1;
   }
 
-  deps.io.stdout("Setup incomplete. Run `relunar setup` in an interactive shell.\n");
+  deps.io.stdout(renderSetupNextSteps(status, relunarConfig));
   return 1;
 }
 
@@ -164,6 +165,10 @@ async function doctor(deps: CliDeps, flags: Record<string, string | boolean>): P
 
 async function auth(subcommand: string | undefined, flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
   if (subcommand === "github") {
+    if (flagNeedsValue(flags, "token")) {
+      deps.io.stderr("Missing value for --token.\n");
+      return 1;
+    }
     const tokenArg = flagString(flags, "token");
     const token = tokenArg ?? (await resolveGithubToken(deps.env));
     if (!token) {
@@ -180,6 +185,18 @@ async function auth(subcommand: string | undefined, flags: Record<string, string
   }
 
   if (subcommand === "daytona") {
+    if (flagNeedsValue(flags, "api-key")) {
+      deps.io.stderr("Missing value for --api-key.\n");
+      return 1;
+    }
+    if (flagNeedsValue(flags, "api-url")) {
+      deps.io.stderr("Missing value for --api-url.\n");
+      return 1;
+    }
+    if (flagNeedsValue(flags, "target")) {
+      deps.io.stderr("Missing value for --target.\n");
+      return 1;
+    }
     const apiKeyArg = flagString(flags, "api-key");
     const envApiKey = deps.env.RELUNAR_DAYTONA_API_KEY;
     const apiKey = apiKeyArg ?? envApiKey;
@@ -220,14 +237,23 @@ async function repoLink(repo: string | undefined, deps: CliDeps): Promise<number
 }
 
 async function issuesList(flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
+  if (flagNeedsValue(flags, "state")) {
+    deps.io.stderr("Missing value for --state.\n");
+    return 1;
+  }
   const repo = await requireRepo(deps);
   const state = parseState(flagString(flags, "state") ?? "open");
   if (!state) {
     deps.io.stderr("Invalid issue state. Use open, closed, or all.\n");
     return 1;
   }
+  const limit = flagPositiveInteger(flags, "limit");
+  if (limit === null) {
+    deps.io.stderr("Invalid limit. Use a positive integer.\n");
+    return 1;
+  }
   const token = await requireGithubToken(deps);
-  const issues = await new GitHubClient(token).listIssues(repo, state);
+  const issues = await new GitHubClient(token).listIssues(repo, state, { ...(limit ? { limit } : {}) });
 
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(issues, null, 2)}\n`);
@@ -240,6 +266,19 @@ async function issuesList(flags: Record<string, string | boolean>, deps: CliDeps
 }
 
 async function repro(args: string[], flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
+  const limitFlag = flagPositiveInteger(flags, "limit");
+  if (limitFlag === null) {
+    deps.io.stderr("Invalid limit. Use a positive integer.\n");
+    return 1;
+  }
+
+  const allOpen = flagBoolean(flags, "all-open");
+  const issueNumber = allOpen ? null : parseIssueNumber(args[0]);
+  if (!allOpen && issueNumber === null) {
+    deps.io.stderr("Usage: relunar repro <issue-number> [--comment]\n");
+    return 1;
+  }
+
   const repo = await requireRepo(deps);
   const token = await requireGithubToken(deps);
   const globalConfig = await readGlobalConfig(configPath(deps));
@@ -257,9 +296,9 @@ async function repro(args: string[], flags: Record<string, string | boolean>, de
   const comment = flagBoolean(flags, "comment");
   const reports: RunReport[] = [];
 
-  if (flagBoolean(flags, "all-open")) {
-    const limit = flagNumber(flags, "limit", 5);
-    const issues = (await client.listIssues(repo, "open")).slice(0, limit);
+  if (allOpen) {
+    const limit = limitFlag ?? 5;
+    const issues = await client.listIssues(repo, "open", { limit });
     for (const issue of issues) {
       const report = await runRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
       reports.push(report);
@@ -268,12 +307,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, de
       }
     }
   } else {
-    const issueNumber = Number.parseInt(args[0] ?? "", 10);
-    if (!Number.isFinite(issueNumber)) {
-      deps.io.stderr("Usage: relunar repro <issue-number> [--comment]\n");
-      return 1;
-    }
-    const issue = await client.getIssue(repo, issueNumber);
+    const issue = await client.getIssue(repo, issueNumber ?? unreachableInvalidIssueNumber());
     const report = await runRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
     reports.push(report);
     if (comment) {
@@ -363,12 +397,38 @@ function parseState(value: string): "open" | "closed" | "all" | null {
   return null;
 }
 
+function unreachableInvalidIssueNumber(): never {
+  throw new Error("Invalid issue number.");
+}
+
+function parseIssueNumber(value: string | undefined): number | null {
+  if (!value || !/^[1-9]\d*$/.test(value)) {
+    return null;
+  }
+  return Number.parseInt(value, 10);
+}
+
+function renderSetupNextSteps(status: Awaited<ReturnType<typeof readSetupStatus>>, relunarConfig: boolean): string {
+  const lines = ["Setup incomplete. Next commands:"];
+  if (!status.github || !status.daytona) {
+    lines.push("  relunar setup");
+  }
+  if (!relunarConfig) {
+    lines.push("  relunar init");
+  }
+  if (!status.repoLinked) {
+    lines.push("  relunar repo link owner/repo");
+  }
+  lines.push("  relunar doctor");
+  return `${lines.join("\n")}\n`;
+}
+
 function helpText(): string {
   return `Relunar CLI
 
 Agent workflow:
   1. relunar doctor [--json]
-  2. relunar issues list --state open --json
+  2. relunar issues list --state open --limit 20 --json
   3. relunar repro <issue-number>
   4. relunar runs show <run-id> --json
   5. relunar repro <issue-number> --comment   # only when user asked
@@ -396,7 +456,7 @@ Commands:
   relunar auth github [--token <token>]
   relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
   relunar repo link owner/repo
-  relunar issues list [--state open|closed|all] [--json]
+  relunar issues list [--state open|closed|all] [--limit N] [--json]
   relunar repro <issue-number> [--comment]
   relunar repro --all-open [--limit 5] [--comment]
   relunar runs list [--json]

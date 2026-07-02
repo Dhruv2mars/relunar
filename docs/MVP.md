@@ -9,7 +9,7 @@
 - `relunar auth github`
 - `relunar auth daytona`
 - `relunar repo link owner/repo`
-- `relunar issues list --state open --json`
+- `relunar issues list --state open --limit 20 --json`
 - `relunar repro <issue>`
 - `relunar repro <issue> --comment`
 - `relunar repro --all-open --limit <n>`

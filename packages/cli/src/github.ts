@@ -3,21 +3,40 @@ import type { Issue, RepoSlug } from "./types";
 export class GitHubClient {
   constructor(private readonly token: string, private readonly fetchImpl: typeof fetch = fetch) {}
 
-  async listIssues(repo: RepoSlug, state: "open" | "closed" | "all"): Promise<Issue[]> {
-    const data = await this.request<GitHubIssue[]>(
-      `/repos/${repo}/issues?state=${encodeURIComponent(state)}&per_page=100`,
-      { method: "GET" },
-    );
+  async listIssues(repo: RepoSlug, state: "open" | "closed" | "all", options: { limit?: number } = {}): Promise<Issue[]> {
+    const issues: Issue[] = [];
+    let page = 1;
 
-    return data
-      .filter((issue) => !("pull_request" in issue))
-      .map((issue) => ({
-        number: issue.number,
-        title: issue.title,
-        body: issue.body ?? "",
-        state: issue.state,
-        url: issue.html_url,
-      }));
+    while (true) {
+      const data = await this.request<GitHubIssue[]>(
+        `/repos/${repo}/issues?state=${encodeURIComponent(state)}&per_page=100&page=${page}`,
+        { method: "GET" },
+      );
+
+      for (const issue of data) {
+        if ("pull_request" in issue) {
+          continue;
+        }
+
+        issues.push({
+          number: issue.number,
+          title: issue.title,
+          body: issue.body ?? "",
+          state: issue.state,
+          url: issue.html_url,
+        });
+
+        if (options.limit && issues.length >= options.limit) {
+          return issues;
+        }
+      }
+
+      if (data.length < 100) {
+        return issues;
+      }
+
+      page += 1;
+    }
   }
 
   async getIssue(repo: RepoSlug, issueNumber: number): Promise<Issue> {

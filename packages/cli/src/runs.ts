@@ -44,8 +44,22 @@ export async function listRuns(cwd: string): Promise<RunReport[]> {
 }
 
 export async function readRun(cwd: string, runId: string): Promise<RunReport> {
-  const raw = await readFile(join(runStoreDir(cwd), runId, "report.json"), "utf8");
-  return JSON.parse(raw) as RunReport;
+  const path = join(runStoreDir(cwd), runId, "report.json");
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if (isNotFound(error)) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+    throw error;
+  }
+
+  try {
+    return JSON.parse(raw) as RunReport;
+  } catch {
+    throw new Error(`Run report is corrupt: ${runId}`);
+  }
 }
 
 function renderLogs(commands: CommandEvidence[]): string {
@@ -64,4 +78,8 @@ function renderLogs(commands: CommandEvidence[]): string {
       return parts.join("\n");
     })
     .join("\n\n");
+}
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

@@ -135,7 +135,7 @@ export async function runInteractiveSetup(options: SetupOptions): Promise<boolea
   }
 }
 
-export function createNodePrompter(): SetupPrompter {
+function createNodePrompter(): SetupPrompter {
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
