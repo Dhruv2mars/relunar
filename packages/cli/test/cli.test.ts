@@ -22,6 +22,14 @@ describe("cli", () => {
     expect(output.stdout).toContain("codex");
   });
 
+  test("prints agent skill with safe workflow rules", async () => {
+    const output = await invoke(["skills", "get", "codex"]);
+    expect(output.code).toBe(0);
+    expect(output.stdout).toContain("Start with `relunar doctor --json`");
+    expect(output.stdout).toContain("Do not post GitHub comments unless");
+    expect(output.stdout).toContain("relunar runs show <run-id> --json");
+  });
+
   test("shows missing doctor checks", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-cli-"));
     try {
