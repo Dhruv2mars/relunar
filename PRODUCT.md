@@ -4,7 +4,7 @@ Relunar is a local CLI harness for maintainers who use coding agents to reproduc
 
 ## Core Bet
 
-Relunar should be CLI-first, not a server-first GitHub bot.
+Relunar should stay CLI-first and local-first.
 
 Agent drives. Relunar executes deterministic sandbox workflow.
 
@@ -20,14 +20,11 @@ Ask Codex, Cursor, or Claude Code to reproduce repository issues. Relunar handle
 
 ## Non-goals for v1
 
-- GitHub App
-- Web dashboard
-- Hosted server
-- Postgres queue
-- Automatic webhooks
+- Hosted Relunar control plane
+- Background automation owned by Relunar
+- Central custody of user credentials
 - Built-in AI agent
-- Billing
-- Team accounts
+- Billing or organization management
 
 ## Architecture
 

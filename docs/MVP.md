@@ -34,6 +34,10 @@ Each repro writes:
 - MCP server
 - Browser reproduction
 - Resume failed runs
-- GitHub App
-- Hosted queue
-- Team dashboard
+
+## Out of Scope
+
+- Hosted Relunar control plane
+- Background automation owned by Relunar
+- Central custody of user credentials
+- Billing or organization management
