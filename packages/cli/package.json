@@ -9,7 +9,8 @@
   "files": [
     "dist",
     "skills",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "bun build src/index.ts --target=node --format=esm --banner '#!/usr/bin/env node' --outfile dist/index.js && chmod +x dist/index.js",
