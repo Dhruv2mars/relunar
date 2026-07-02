@@ -12,6 +12,8 @@ describe("cli", () => {
     const output = await invoke(["help"]);
     expect(output.code).toBe(0);
     expect(output.stdout).toContain("relunar repro <issue-number>");
+    expect(output.stdout).toContain("Agent workflow");
+    expect(output.stdout).toContain("Machine setup");
   });
 
   test("prints supported skills", async () => {
@@ -45,12 +47,12 @@ describe("cli", () => {
     }
   });
 
-  test("setup prompts for GitHub and Daytona auth and writes config", async () => {
+  test("setup prompts for missing Daytona auth and writes config", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-setup-"));
     try {
       const secrets: Array<{ name: SecretName; value: string }> = [];
-      const output = await invoke(["setup"], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_SKIP_GH_AUTH_TOKEN: "1" }, {
-        prompt: scriptedPrompt(["gh-token", "daytona-key", "https://daytona.example/api", "us", "owner/repo"]),
+      const output = await invoke(["setup"], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_GITHUB_TOKEN: "gh-token" }, {
+        prompt: scriptedPrompt(["daytona-key", "https://daytona.example/api", "us", "owner/repo"]),
         secretWriter: async (name, value) => {
           secrets.push({ name, value });
         },
@@ -59,9 +61,48 @@ describe("cli", () => {
       expect(output.code).toBe(0);
       expect(output.stdout).toContain("Relunar setup complete");
       expect(secrets).toEqual([
-        { name: "github-token", value: "gh-token" },
         { name: "daytona-api-key", value: "daytona-key" },
       ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("auth commands use injected secret writer and do not require keychain for env credentials", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-auth-"));
+    try {
+      const secrets: Array<{ name: SecretName; value: string }> = [];
+      const github = await invoke(["auth", "github", "--token", "gh-token"], dir, { XDG_CONFIG_HOME: join(dir, "config") }, {
+        secretWriter: async (name, value) => {
+          secrets.push({ name, value });
+        },
+      });
+      expect(github.code).toBe(0);
+      expect(github.stdout).toContain("GitHub auth saved");
+
+      const daytona = await invoke(["auth", "daytona"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_DAYTONA_API_KEY: "daytona-from-env",
+      }, {
+        secretWriter: async () => {
+          throw new Error("should not write env key");
+        },
+      });
+      expect(daytona.code).toBe(0);
+      expect(daytona.stdout).toContain("Daytona auth available from environment");
+      expect(secrets).toEqual([{ name: "github-token", value: "gh-token" }]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("init reports existing config without overwriting it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-init-"));
+    try {
+      expect((await invoke(["init"], dir)).code).toBe(0);
+      const second = await invoke(["init"], dir);
+      expect(second.code).toBe(1);
+      expect(second.stderr).toContain(".relunar.yml already exists");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
