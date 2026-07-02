@@ -16,6 +16,7 @@
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "verify": "turbo run test typecheck build",
+    "release:trust": "npx npm@11.17.0 trust github @dhruv2mars/relunar --file release.yml --repo Dhruv2mars/relunar --allow-publish --yes",
     "release:tag": "node scripts/release-tag.mjs"
   },
   "devDependencies": {

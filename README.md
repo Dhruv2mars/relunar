@@ -126,6 +126,14 @@ Use [docs/testbed.md](docs/testbed.md) for the local Fastify OSS testbed workflo
 
 The published npm package is `@dhruv2mars/relunar`. It ships the `relunar` executable from compiled `dist/index.js` and is released from tags like `v0.1.0`.
 
+Configure npm trusted publishing once before tagging a release:
+
+```sh
+bun run release:trust -- --otp 123456
+```
+
+The trust command must use npm `11.15.0` or newer and must include `--allow-publish`. Do not type the placeholder form `--otp <6-digit-code>` in zsh; angle brackets are shell redirection.
+
 Turborepo runs builds, tests, and typechecking:
 
 ```sh
