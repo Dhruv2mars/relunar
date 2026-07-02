@@ -35,14 +35,26 @@ describe("release contract", () => {
     expect(workflow).toContain("actions/setup-node@v5");
     expect(workflow).toContain("tag/version mismatch");
     expect(workflow).toContain("npm view @dhruv2mars/relunar version");
+    expect(workflow).toContain("npm install -g npm@11.17.0");
     expect(workflow).toContain("publish via npm trusted publisher");
-    expect(workflow).toContain("trusted publisher not configured and NPM_TOKEN missing");
     expect(workflow).toContain("npm publish --provenance --access public");
-    expect(workflow).toContain("NPM_TOKEN");
-    expect(workflow).toContain("npm publish --access public");
     expect(workflow).toContain("id-token: write");
+    expect(workflow).not.toContain("NPM_TOKEN");
+    expect(workflow).not.toContain("//registry.npmjs.org/:_authToken");
     expect(workflow).not.toContain("actions/checkout@v4");
     expect(workflow).not.toContain("actions/setup-node@v4");
+  });
+
+  test("release trust script uses supported npm trusted publisher flags", () => {
+    const rootPackageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
+    const command = rootPackageJson.scripts["release:trust"];
+
+    expect(command).toContain("npm@11.17.0");
+    expect(command).toContain("trust github @dhruv2mars/relunar");
+    expect(command).toContain("--file release.yml");
+    expect(command).toContain("--repo Dhruv2mars/relunar");
+    expect(command).toContain("--allow-publish");
+    expect(command).toContain("--yes");
   });
 
   test("release tag script prints package version tag", () => {
