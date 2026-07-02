@@ -43,7 +43,7 @@ export async function writeSecret(name: SecretName, value: string): Promise<void
   ]);
 }
 
-export async function readSecret(name: SecretName): Promise<string | null> {
+async function readSecret(name: SecretName): Promise<string | null> {
   if (platform() !== "darwin") {
     return null;
   }

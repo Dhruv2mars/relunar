@@ -44,14 +44,25 @@ export function flagString(flags: Record<string, string | boolean>, name: string
   return typeof value === "string" ? value : undefined;
 }
 
-export function flagNumber(flags: Record<string, string | boolean>, name: string, fallback: number): number {
-  const value = flagString(flags, name);
-  if (!value) {
-    return fallback;
+export function flagNeedsValue(flags: Record<string, string | boolean>, name: string): boolean {
+  return flags[name] === true;
+}
+
+export function flagPositiveInteger(flags: Record<string, string | boolean>, name: string): number | null | undefined {
+  if (flagNeedsValue(flags, name)) {
+    return null;
   }
 
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  const value = flagString(flags, name);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!/^[1-9]\d*$/.test(value)) {
+    return null;
+  }
+
+  return Number.parseInt(value, 10);
 }
 
 export function flagBoolean(flags: Record<string, string | boolean>, name: string): boolean {

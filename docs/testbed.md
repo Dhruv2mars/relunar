@@ -2,10 +2,10 @@
 
 Use a local OSS clone to exercise the public user workflow without touching Relunar's own repository.
 
-Current local testbed:
+Recommended local testbed:
 
 ```txt
-/Users/dhruv2mars/dev/github/relunar-testbed-fastify
+$DEV_GITHUB/relunar-testbed-fastify
 ```
 
 Source repository:
@@ -17,7 +17,8 @@ fastify/fastify
 ## Setup
 
 ```sh
-cd /Users/dhruv2mars/dev/github
+export DEV_GITHUB="${DEV_GITHUB:-$HOME/dev/github}"
+cd "$DEV_GITHUB"
 git clone --depth 1 https://github.com/fastify/fastify.git relunar-testbed-fastify
 cd relunar-testbed-fastify
 relunar init
@@ -43,7 +44,7 @@ report:
 
 ```sh
 relunar doctor --json
-relunar issues list --state open --json
+relunar issues list --state open --limit 5 --json
 ```
 
 Expected before Daytona auth is configured:

@@ -48,16 +48,11 @@ export function renderRelunarConfig(config: RelunarConfig = defaultRelunarConfig
   return stringify(config);
 }
 
-export async function readRelunarConfig(path: string): Promise<RelunarConfig> {
-  const raw = await readFile(path, "utf8");
-  return parseRelunarConfig(raw);
-}
-
 export async function writeRelunarConfig(path: string): Promise<void> {
   await writeFile(path, renderRelunarConfig(), { flag: "wx" });
 }
 
-export function configHome(env: NodeJS.ProcessEnv = process.env): string {
+function configHome(env: NodeJS.ProcessEnv = process.env): string {
   return env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
 }
 

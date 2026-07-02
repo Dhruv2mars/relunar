@@ -26,6 +26,7 @@ describe("cli", () => {
     const output = await invoke(["skills", "get", "codex"]);
     expect(output.code).toBe(0);
     expect(output.stdout).toContain("Start with `relunar doctor --json`");
+    expect(output.stdout).toContain("relunar issues list --state open --limit 20 --json");
     expect(output.stdout).toContain("Do not post GitHub comments unless");
     expect(output.stdout).toContain("relunar runs show <run-id> --json");
   });
@@ -63,6 +64,36 @@ describe("cli", () => {
       const output = await invoke(["issues", "list", "--state", "merged"], dir, env);
       expect(output.code).toBe(1);
       expect(output.stderr).toContain("Invalid issue state");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("issues list rejects invalid limit before network work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-issues-limit-"));
+    try {
+      const env = { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_GITHUB_TOKEN: "gh-token" };
+      await invoke(["repo", "link", "owner/repo"], dir, env);
+      const output = await invoke(["issues", "list", "--limit", "nope"], dir, env);
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Invalid limit");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("repro all-open rejects invalid limit before Daytona setup", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-repro-limit-"));
+    try {
+      const env = {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_GITHUB_TOKEN: "gh-token",
+        RELUNAR_DAYTONA_API_KEY: "daytona-key",
+      };
+      await invoke(["repo", "link", "owner/repo"], dir, env);
+      const output = await invoke(["repro", "--all-open", "--limit", "0"], dir, env);
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Invalid limit");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -139,6 +170,11 @@ describe("cli", () => {
       const show = await invoke(["runs", "show"], dir);
       expect(show.code).toBe(1);
       expect(show.stderr).toContain("Usage: relunar runs show <run-id>");
+
+      const missing = await invoke(["runs", "show", "missing-run"], dir);
+      expect(missing.code).toBe(1);
+      expect(missing.stderr).toContain("Run not found: missing-run");
+      expect(missing.stderr).not.toContain(dir);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -155,6 +191,68 @@ describe("cli", () => {
       expect(output.code).toBe(1);
       expect(output.stdout).toContain("Relunar CLI");
       expect(output.stdout).toContain("Relunar setup");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("first run does not claim setup complete without repo config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-first-run-partial-"));
+    try {
+      const output = await invoke([], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_GITHUB_TOKEN: "gh-token",
+        RELUNAR_DAYTONA_API_KEY: "daytona-key",
+      });
+
+      expect(output.code).toBe(1);
+      expect(output.stdout).toContain("Setup incomplete");
+      expect(output.stdout).toContain("relunar init");
+      expect(output.stdout).toContain("relunar repo link owner/repo");
+      expect(output.stdout).not.toContain("Setup complete");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("repro validates issue number before setup and network work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-repro-usage-"));
+    const cases = [[], ["abc"], ["123abc"], ["0"]];
+
+    try {
+      for (const args of cases) {
+        const output = await invoke(["repro", ...args], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_SKIP_GH_AUTH_TOKEN: "1" });
+        expect(output.code).toBe(1);
+        expect(output.stderr).toContain("Usage: relunar repro <issue-number>");
+        expect(output.stderr).not.toContain("No repo linked");
+        expect(output.stderr).not.toContain("Missing GitHub token");
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("commands reject flags that require missing values", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-flag-values-"));
+    try {
+      const env = { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_GITHUB_TOKEN: "gh-token" };
+      await invoke(["repo", "link", "owner/repo"], dir, env);
+
+      const state = await invoke(["issues", "list", "--state"], dir, env);
+      expect(state.code).toBe(1);
+      expect(state.stderr).toContain("Missing value for --state");
+
+      const limit = await invoke(["issues", "list", "--limit"], dir, env);
+      expect(limit.code).toBe(1);
+      expect(limit.stderr).toContain("Invalid limit");
+
+      const token = await invoke(["auth", "github", "--token"], dir, env);
+      expect(token.code).toBe(1);
+      expect(token.stderr).toContain("Missing value for --token");
+
+      const apiKey = await invoke(["auth", "daytona", "--api-key"], dir, env);
+      expect(apiKey.code).toBe(1);
+      expect(apiKey.stderr).toContain("Missing value for --api-key");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -34,7 +34,7 @@ relunar
 relunar setup
 relunar repo link owner/repo
 relunar doctor
-relunar issues list --state open --json
+relunar issues list --state open --limit 20 --json
 relunar repro 123
 relunar repro 123 --comment
 ```
@@ -103,7 +103,7 @@ relunar doctor
 relunar auth github
 relunar auth daytona
 relunar repo link owner/repo
-relunar issues list --state open --json
+relunar issues list --state open --limit 20 --json
 relunar repro 123
 relunar repro 123 --comment
 relunar repro --all-open --limit 5

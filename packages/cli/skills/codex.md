@@ -5,7 +5,7 @@ Use Relunar when a maintainer asks you to reproduce GitHub issues in a repositor
 ## Rules
 
 - Start with `relunar doctor --json`.
-- Use JSON output when planning: `relunar issues list --state open --json`.
+- Use bounded JSON output when planning: `relunar issues list --state open --limit 20 --json`.
 - Prefer one issue first before batch work: `relunar repro 123`.
 - Read reports with `relunar runs show <run-id> --json` when deciding next steps.
 - Do not post GitHub comments unless the user asks, or the command includes `--comment`.
@@ -23,7 +23,7 @@ relunar doctor --json
 relunar auth github [--token <token>]
 relunar auth daytona --api-key <key>
 relunar repo link owner/repo
-relunar issues list --state open --json
+relunar issues list --state open --limit 20 --json
 relunar repro 123
 relunar repro 123 --comment
 relunar repro --all-open --limit 5

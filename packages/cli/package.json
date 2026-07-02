@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --target=node --format=esm --banner '#!/usr/bin/env node' --outfile dist/index.js && chmod +x dist/index.js",
+    "build": "bun build src/index.ts --target=node --format=esm --packages=external --banner '#!/usr/bin/env node' --outfile dist/index.js && chmod +x dist/index.js",
     "dev": "bun src/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",

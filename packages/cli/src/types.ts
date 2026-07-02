@@ -1,11 +1,3 @@
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue };
-
 export type RepoSlug = `${string}/${string}`;
 
 export type RelunarConfig = {
@@ -33,7 +25,7 @@ export type Issue = {
   url: string;
 };
 
-export type CommandStatus = "passed" | "failed" | "timed_out" | "skipped";
+export type CommandStatus = "passed" | "failed" | "timed_out";
 
 export type CommandEvidence = {
   name: string;

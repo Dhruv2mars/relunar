@@ -40,7 +40,7 @@ Agent use:
 
 ```sh
 relunar doctor --json
-relunar issues list --state open --json
+relunar issues list --state open --limit 20 --json
 relunar repro 123
 relunar runs show <run-id> --json
 ```
@@ -107,7 +107,7 @@ relunar doctor [--json]
 relunar auth github [--token <token>]
 relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
 relunar repo link owner/repo
-relunar issues list [--state open|closed|all] [--json]
+relunar issues list [--state open|closed|all] [--limit N] [--json]
 relunar repro <issue-number> [--comment]
 relunar repro --all-open [--limit 5] [--comment]
 relunar runs list [--json]
