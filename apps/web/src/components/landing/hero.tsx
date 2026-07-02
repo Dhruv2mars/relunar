@@ -4,22 +4,12 @@ import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/button";
 import { CopyButton } from "@/components/copy-button";
-import { LogoMark } from "@/components/logo-mark";
 import { siteConfig } from "@/lib/site";
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden px-6 pb-20 pt-16 md:pb-28 md:pt-24">
       <div className="hero-glow pointer-events-none absolute inset-0" />
-      <motion.div
-        aria-hidden
-        initial={{ opacity: 0, scale: 0.92 }}
-        animate={{ opacity: 0.07, scale: 1 }}
-        transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-        className="pointer-events-none absolute left-1/2 top-8 -translate-x-1/2 text-foreground md:top-4"
-      >
-        <LogoMark className="size-[min(72vw,28rem)] animate-float" />
-      </motion.div>
       <div className="relative mx-auto max-w-6xl">
         <motion.div
           initial={{ opacity: 0, y: 18 }}
