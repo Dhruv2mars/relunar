@@ -45,6 +45,8 @@ describe("release contract", () => {
     expect(workflow).toContain("npm view @dhruv2mars/relunar version");
     expect(workflow).toContain("npm install -g npm@11.17.0");
     expect(workflow).toContain("Pack and smoke CLI");
+    expect(workflow).toContain("PACK_OUTPUT");
+    expect(workflow).toContain("output.match(/\\[\\s*\\{[\\s\\S]*\\}\\s*\\]\\s*$/)");
     expect(workflow).toContain("publish via npm trusted publisher");
     expect(workflow).toContain("npm publish --provenance --access public");
     expect(asList(publishNpm.needs)).toEqual(["resolve_tag", "validate"]);

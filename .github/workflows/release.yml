@@ -103,7 +103,22 @@ jobs:
         run: |
           set -euo pipefail
           pack_json="$(npm pack --json --pack-destination "${RUNNER_TEMP}")"
-          tarball="$(node -e "const data = JSON.parse(process.argv[1]); console.log(data[0].filename)" "${pack_json}")"
+          tarball="$(
+            PACK_OUTPUT="${pack_json}" node <<'NODE'
+          const output = process.env.PACK_OUTPUT ?? "";
+          const match = output.match(/\[\s*\{[\s\S]*\}\s*\]\s*$/);
+          if (!match) {
+            console.error(output);
+            process.exit(1);
+          }
+          const [pack] = JSON.parse(match[0]);
+          if (!pack?.filename) {
+            console.error(output);
+            process.exit(1);
+          }
+          console.log(pack.filename);
+          NODE
+          )"
           prefix="${RUNNER_TEMP}/relunar-smoke"
           npm install --prefix "${prefix}" --global "${RUNNER_TEMP}/${tarball}"
           "${prefix}/bin/relunar" help
