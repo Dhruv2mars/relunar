@@ -43,7 +43,15 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     }
 
     if (command === "init") {
-      await writeRelunarConfig(join(deps.cwd, ".relunar.yml"));
+      try {
+        await writeRelunarConfig(join(deps.cwd, ".relunar.yml"));
+      } catch (error) {
+        if (isAlreadyExists(error)) {
+          deps.io.stderr(".relunar.yml already exists. Edit it in place or remove it before running init again.\n");
+          return 1;
+        }
+        throw error;
+      }
       deps.io.stdout("Created .relunar.yml\n");
       return 0;
     }
@@ -85,7 +93,11 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       return await runsList(flags, deps);
     }
 
-    if (command === "runs" && subcommand === "show" && third) {
+    if (command === "runs" && subcommand === "show") {
+      if (!third) {
+        deps.io.stderr("Usage: relunar runs show <run-id> [--json]\n");
+        return 1;
+      }
       return await runsShow(third, flags, deps);
     }
 
@@ -152,25 +164,32 @@ async function doctor(deps: CliDeps, flags: Record<string, string | boolean>): P
 
 async function auth(subcommand: string | undefined, flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
   if (subcommand === "github") {
-    const token = flagString(flags, "token") ?? (await resolveGithubToken(deps.env));
+    const tokenArg = flagString(flags, "token");
+    const token = tokenArg ?? (await resolveGithubToken(deps.env));
     if (!token) {
       deps.io.stderr("No GitHub token. Run gh auth login, set RELUNAR_GITHUB_TOKEN, or pass --token.\n");
       return 1;
     }
-    if (flagString(flags, "token")) {
-      await writeSecret("github-token", token);
+    if (tokenArg) {
+      await (deps.secretWriter ?? writeSecret)("github-token", token);
+      deps.io.stdout("GitHub auth saved\n");
+      return 0;
     }
     deps.io.stdout("GitHub auth available\n");
     return 0;
   }
 
   if (subcommand === "daytona") {
-    const apiKey = flagString(flags, "api-key") ?? deps.env.RELUNAR_DAYTONA_API_KEY;
+    const apiKeyArg = flagString(flags, "api-key");
+    const envApiKey = deps.env.RELUNAR_DAYTONA_API_KEY;
+    const apiKey = apiKeyArg ?? envApiKey;
     if (!apiKey) {
       deps.io.stderr("No Daytona API key. Pass --api-key or set RELUNAR_DAYTONA_API_KEY.\n");
       return 1;
     }
-    await writeSecret("daytona-api-key", apiKey);
+    if (apiKeyArg) {
+      await (deps.secretWriter ?? writeSecret)("daytona-api-key", apiKey);
+    }
     const config = await readGlobalConfig(configPath(deps));
     const apiUrl = flagString(flags, "api-url") ?? deps.env.RELUNAR_DAYTONA_API_URL ?? config.daytona?.apiUrl;
     const target = flagString(flags, "target") ?? deps.env.RELUNAR_DAYTONA_TARGET ?? config.daytona?.target;
@@ -181,7 +200,7 @@ async function auth(subcommand: string | undefined, flags: Record<string, string
         ...(target ? { target } : {}),
       },
     }, configPath(deps));
-    deps.io.stdout("Daytona auth saved to OS keychain\n");
+    deps.io.stdout(apiKeyArg ? "Daytona auth saved to OS keychain\n" : "Daytona auth available from environment\n");
     return 0;
   }
 
@@ -202,12 +221,18 @@ async function repoLink(repo: string | undefined, deps: CliDeps): Promise<number
 
 async function issuesList(flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
   const repo = await requireRepo(deps);
+  const state = parseState(flagString(flags, "state") ?? "open");
+  if (!state) {
+    deps.io.stderr("Invalid issue state. Use open, closed, or all.\n");
+    return 1;
+  }
   const token = await requireGithubToken(deps);
-  const state = normalizeState(flagString(flags, "state") ?? "open");
   const issues = await new GitHubClient(token).listIssues(repo, state);
 
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(issues, null, 2)}\n`);
+  } else if (issues.length === 0) {
+    deps.io.stdout(`No ${state} issues found\n`);
   } else {
     deps.io.stdout(`${issues.map((issue) => `#${issue.number} ${issue.title}`).join("\n")}\n`);
   }
@@ -264,6 +289,8 @@ async function runsList(flags: Record<string, string | boolean>, deps: CliDeps):
   const runs = await listRuns(deps.cwd);
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(runs, null, 2)}\n`);
+  } else if (runs.length === 0) {
+    deps.io.stdout("No runs found\n");
   } else {
     deps.io.stdout(`${runs.map((run) => `${run.runId} ${run.status} #${run.issue.number}`).join("\n")}\n`);
   }
@@ -329,15 +356,38 @@ async function requireGithubToken(deps: CliDeps): Promise<string> {
   return token;
 }
 
-function normalizeState(value: string): "open" | "closed" | "all" {
+function parseState(value: string): "open" | "closed" | "all" | null {
   if (value === "open" || value === "closed" || value === "all") {
     return value;
   }
-  return "open";
+  return null;
 }
 
 function helpText(): string {
   return `Relunar CLI
+
+Agent workflow:
+  1. relunar doctor [--json]
+  2. relunar issues list --state open --json
+  3. relunar repro <issue-number>
+  4. relunar runs show <run-id> --json
+  5. relunar repro <issue-number> --comment   # only when user asked
+
+Human workflow:
+  1. npm install -g @dhruv2mars/relunar
+  2. relunar setup
+  3. cd target-repo && relunar init
+  4. relunar repo link owner/repo
+  5. relunar repro 123
+
+Machine setup:
+  relunar setup
+  relunar auth github [--token <token>]
+  relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
+
+Repo setup:
+  relunar init                         # creates .relunar.yml
+  relunar repo link owner/repo
 
 Commands:
   relunar init
@@ -357,4 +407,8 @@ Commands:
 
 function configPath(deps: CliDeps): string {
   return globalConfigPath(deps.env);
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "EEXIST";
 }

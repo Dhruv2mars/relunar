@@ -120,6 +120,10 @@ relunar skills install codex
 packages/cli  Relunar CLI
 ```
 
+## Testbed
+
+Use [docs/testbed.md](docs/testbed.md) for the local Fastify OSS testbed workflow.
+
 The published npm package is `@dhruv2mars/relunar`. It ships the `relunar` executable from compiled `dist/index.js` and is released from tags like `v0.1.0`.
 
 Turborepo runs builds, tests, and typechecking:

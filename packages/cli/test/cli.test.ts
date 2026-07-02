@@ -12,12 +12,22 @@ describe("cli", () => {
     const output = await invoke(["help"]);
     expect(output.code).toBe(0);
     expect(output.stdout).toContain("relunar repro <issue-number>");
+    expect(output.stdout).toContain("Agent workflow");
+    expect(output.stdout).toContain("Machine setup");
   });
 
   test("prints supported skills", async () => {
     const output = await invoke(["skills", "list"]);
     expect(output.code).toBe(0);
     expect(output.stdout).toContain("codex");
+  });
+
+  test("prints agent skill with safe workflow rules", async () => {
+    const output = await invoke(["skills", "get", "codex"]);
+    expect(output.code).toBe(0);
+    expect(output.stdout).toContain("Start with `relunar doctor --json`");
+    expect(output.stdout).toContain("Do not post GitHub comments unless");
+    expect(output.stdout).toContain("relunar runs show <run-id> --json");
   });
 
   test("shows missing doctor checks", async () => {
@@ -45,12 +55,25 @@ describe("cli", () => {
     }
   });
 
-  test("setup prompts for GitHub and Daytona auth and writes config", async () => {
+  test("issues list rejects invalid state before network work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-issues-state-"));
+    try {
+      const env = { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_GITHUB_TOKEN: "gh-token" };
+      await invoke(["repo", "link", "owner/repo"], dir, env);
+      const output = await invoke(["issues", "list", "--state", "merged"], dir, env);
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Invalid issue state");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("setup prompts for missing Daytona auth and writes config", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-setup-"));
     try {
       const secrets: Array<{ name: SecretName; value: string }> = [];
-      const output = await invoke(["setup"], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_SKIP_GH_AUTH_TOKEN: "1" }, {
-        prompt: scriptedPrompt(["gh-token", "daytona-key", "https://daytona.example/api", "us", "owner/repo"]),
+      const output = await invoke(["setup"], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_GITHUB_TOKEN: "gh-token" }, {
+        prompt: scriptedPrompt(["daytona-key", "https://daytona.example/api", "us", "owner/repo"]),
         secretWriter: async (name, value) => {
           secrets.push({ name, value });
         },
@@ -59,9 +82,63 @@ describe("cli", () => {
       expect(output.code).toBe(0);
       expect(output.stdout).toContain("Relunar setup complete");
       expect(secrets).toEqual([
-        { name: "github-token", value: "gh-token" },
         { name: "daytona-api-key", value: "daytona-key" },
       ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("auth commands use injected secret writer and do not require keychain for env credentials", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-auth-"));
+    try {
+      const secrets: Array<{ name: SecretName; value: string }> = [];
+      const github = await invoke(["auth", "github", "--token", "gh-token"], dir, { XDG_CONFIG_HOME: join(dir, "config") }, {
+        secretWriter: async (name, value) => {
+          secrets.push({ name, value });
+        },
+      });
+      expect(github.code).toBe(0);
+      expect(github.stdout).toContain("GitHub auth saved");
+
+      const daytona = await invoke(["auth", "daytona"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_DAYTONA_API_KEY: "daytona-from-env",
+      }, {
+        secretWriter: async () => {
+          throw new Error("should not write env key");
+        },
+      });
+      expect(daytona.code).toBe(0);
+      expect(daytona.stdout).toContain("Daytona auth available from environment");
+      expect(secrets).toEqual([{ name: "github-token", value: "gh-token" }]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("init reports existing config without overwriting it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-init-"));
+    try {
+      expect((await invoke(["init"], dir)).code).toBe(0);
+      const second = await invoke(["init"], dir);
+      expect(second.code).toBe(1);
+      expect(second.stderr).toContain(".relunar.yml already exists");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("runs commands have useful empty and usage output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-runs-"));
+    try {
+      const list = await invoke(["runs", "list"], dir);
+      expect(list.code).toBe(0);
+      expect(list.stdout).toContain("No runs found");
+
+      const show = await invoke(["runs", "show"], dir);
+      expect(show.code).toBe(1);
+      expect(show.stderr).toContain("Usage: relunar runs show <run-id>");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

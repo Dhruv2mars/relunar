@@ -1,6 +1,6 @@
 {
   "name": "@dhruv2mars/relunar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI-first GitHub issue repro harness for coding agents",
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
   "files": [
     "dist",
     "skills",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "bun build src/index.ts --target=node --format=esm --banner '#!/usr/bin/env node' --outfile dist/index.js && chmod +x dist/index.js",

@@ -7,12 +7,15 @@ const repoRoot = join(import.meta.dir, "..", "..", "..");
 
 describe("release contract", () => {
   test("package is npm publishable as relunar CLI", () => {
+    const rootPackageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
     const packageJson = JSON.parse(readFileSync(join(repoRoot, "packages", "cli", "package.json"), "utf8"));
 
     expect(packageJson.name).toBe("@dhruv2mars/relunar");
+    expect(rootPackageJson.version).toBe(packageJson.version);
     expect(packageJson.private).toBeUndefined();
     expect(packageJson.bin.relunar).toBe("dist/index.js");
     expect(packageJson.files).toContain("dist");
+    expect(packageJson.files).toContain("LICENSE");
     expect(packageJson.publishConfig.access).toBe("public");
     expect(packageJson.repository.directory).toBe("packages/cli");
   });
