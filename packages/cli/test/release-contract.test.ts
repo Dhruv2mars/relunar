@@ -25,12 +25,24 @@ describe("release contract", () => {
 
     expect(workflow).toContain("tags:");
     expect(workflow).toContain('- "v*"');
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("repository_dispatch:");
+    expect(workflow).toContain("release-rerun");
+    expect(workflow).toContain("resolve_tag:");
+    expect(workflow).toContain("ref: ${{ needs.resolve_tag.outputs.release_tag }}");
+    expect(workflow).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true");
+    expect(workflow).toContain("actions/checkout@v5");
+    expect(workflow).toContain("actions/setup-node@v5");
     expect(workflow).toContain("tag/version mismatch");
     expect(workflow).toContain("npm view @dhruv2mars/relunar version");
+    expect(workflow).toContain("publish via npm trusted publisher");
+    expect(workflow).toContain("trusted publisher not configured and NPM_TOKEN missing");
     expect(workflow).toContain("npm publish --provenance --access public");
     expect(workflow).toContain("NPM_TOKEN");
     expect(workflow).toContain("npm publish --access public");
     expect(workflow).toContain("id-token: write");
+    expect(workflow).not.toContain("actions/checkout@v4");
+    expect(workflow).not.toContain("actions/setup-node@v4");
   });
 
   test("release tag script prints package version tag", () => {
