@@ -93,7 +93,11 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
       return await runsList(flags, deps);
     }
 
-    if (command === "runs" && subcommand === "show" && third) {
+    if (command === "runs" && subcommand === "show") {
+      if (!third) {
+        deps.io.stderr("Usage: relunar runs show <run-id> [--json]\n");
+        return 1;
+      }
       return await runsShow(third, flags, deps);
     }
 
@@ -217,12 +221,18 @@ async function repoLink(repo: string | undefined, deps: CliDeps): Promise<number
 
 async function issuesList(flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
   const repo = await requireRepo(deps);
+  const state = parseState(flagString(flags, "state") ?? "open");
+  if (!state) {
+    deps.io.stderr("Invalid issue state. Use open, closed, or all.\n");
+    return 1;
+  }
   const token = await requireGithubToken(deps);
-  const state = normalizeState(flagString(flags, "state") ?? "open");
   const issues = await new GitHubClient(token).listIssues(repo, state);
 
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(issues, null, 2)}\n`);
+  } else if (issues.length === 0) {
+    deps.io.stdout(`No ${state} issues found\n`);
   } else {
     deps.io.stdout(`${issues.map((issue) => `#${issue.number} ${issue.title}`).join("\n")}\n`);
   }
@@ -279,6 +289,8 @@ async function runsList(flags: Record<string, string | boolean>, deps: CliDeps):
   const runs = await listRuns(deps.cwd);
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(runs, null, 2)}\n`);
+  } else if (runs.length === 0) {
+    deps.io.stdout("No runs found\n");
   } else {
     deps.io.stdout(`${runs.map((run) => `${run.runId} ${run.status} #${run.issue.number}`).join("\n")}\n`);
   }
@@ -344,11 +356,11 @@ async function requireGithubToken(deps: CliDeps): Promise<string> {
   return token;
 }
 
-function normalizeState(value: string): "open" | "closed" | "all" {
+function parseState(value: string): "open" | "closed" | "all" | null {
   if (value === "open" || value === "closed" || value === "all") {
     return value;
   }
-  return "open";
+  return null;
 }
 
 function helpText(): string {

@@ -47,6 +47,19 @@ describe("cli", () => {
     }
   });
 
+  test("issues list rejects invalid state before network work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-issues-state-"));
+    try {
+      const env = { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_GITHUB_TOKEN: "gh-token" };
+      await invoke(["repo", "link", "owner/repo"], dir, env);
+      const output = await invoke(["issues", "list", "--state", "merged"], dir, env);
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Invalid issue state");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("setup prompts for missing Daytona auth and writes config", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-setup-"));
     try {
@@ -103,6 +116,21 @@ describe("cli", () => {
       const second = await invoke(["init"], dir);
       expect(second.code).toBe(1);
       expect(second.stderr).toContain(".relunar.yml already exists");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("runs commands have useful empty and usage output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-runs-"));
+    try {
+      const list = await invoke(["runs", "list"], dir);
+      expect(list.code).toBe(0);
+      expect(list.stdout).toContain("No runs found");
+
+      const show = await invoke(["runs", "show"], dir);
+      expect(show.code).toBe(1);
+      expect(show.stderr).toContain("Usage: relunar runs show <run-id>");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
