@@ -1,4 +1,5 @@
 import { Bot, Cloud, FileText, Terminal } from "lucide-react";
+import { Reveal } from "@/components/reveal";
 import { Section } from "@/components/section";
 
 const steps = [
@@ -36,23 +37,24 @@ export function HowItWorksSection() {
       title="Agent drives. Relunar executes."
       description="Relunar is not another autonomous bot. It is the elegant plumbing layer between your coding agent and reproducible issue evidence."
     >
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4 xl:gap-4">
         {steps.map((step, index) => (
-          <article
-            key={step.title}
-            className="glass-panel group rounded-[1.35rem] border border-border p-6 transition-transform duration-300 hover:-translate-y-1"
-          >
-            <div className="mb-5 flex items-center justify-between">
-              <div className="inline-flex size-11 items-center justify-center rounded-2xl border border-border bg-surface-strong text-accent">
-                <step.icon className="size-5" strokeWidth={1.6} />
+          <Reveal key={step.title} delay={index * 0.06}>
+            <article className="card-interactive group relative h-full rounded-[1.35rem] border border-border bg-background-elevated p-6 md:p-7">
+              <div className="mb-6 flex items-center justify-between">
+                <div className="inline-flex size-11 items-center justify-center rounded-2xl border border-border bg-surface-strong text-accent transition-colors group-hover:border-accent/20 group-hover:bg-accent-soft">
+                  <step.icon className="size-5" strokeWidth={1.5} />
+                </div>
+                <span className="text-[0.7rem] font-medium tabular-nums tracking-[0.12em] text-foreground-subtle">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
               </div>
-              <span className="text-xs font-medium tabular-nums text-foreground-subtle">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-            </div>
-            <h3 className="text-lg font-medium tracking-[-0.02em] text-foreground">{step.title}</h3>
-            <p className="mt-3 text-sm leading-relaxed text-foreground-muted">{step.description}</p>
-          </article>
+              <h3 className="text-[1.05rem] font-medium leading-snug tracking-[-0.02em] text-foreground">
+                {step.title}
+              </h3>
+              <p className="mt-3 text-sm leading-[1.65] text-foreground-muted">{step.description}</p>
+            </article>
+          </Reveal>
         ))}
       </div>
     </Section>

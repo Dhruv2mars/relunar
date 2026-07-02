@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { siteConfig } from "@/lib/site";
 
@@ -11,19 +12,19 @@ const links = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-border px-6 py-16">
-      <div className="mx-auto flex max-w-6xl flex-col gap-12 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
+    <footer className="border-t border-border px-6 py-16 md:py-20">
+      <div className="mx-auto flex max-w-6xl flex-col gap-12 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-sm space-y-5">
           <Logo />
-          <p className="max-w-sm text-sm leading-relaxed text-foreground-muted">
-            CLI-first issue reproduction for coding agents. Local credentials. Deterministic reports.
-            Optional comments when you ask.
+          <p className="text-sm leading-[1.7] text-foreground-muted">
+            CLI-first issue reproduction for coding agents. Local credentials. Deterministic reports. Optional comments
+            when you ask.
           </p>
           <p className="text-xs uppercase tracking-[0.22em] text-foreground-subtle">
             Open source · MIT · No hosted service
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-x-10 gap-y-3 text-sm">
+        <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-sm sm:grid-cols-3">
           {links.map((link) =>
             "external" in link && link.external ? (
               <a
@@ -36,9 +37,13 @@ export function SiteFooter() {
                 {link.label}
               </a>
             ) : (
-              <a key={link.href} href={link.href} className="text-foreground-muted transition-colors hover:text-foreground">
+              <Link
+                key={link.href}
+                href={link.href}
+                className="text-foreground-muted transition-colors hover:text-foreground"
+              >
                 {link.label}
-              </a>
+              </Link>
             ),
           )}
         </div>

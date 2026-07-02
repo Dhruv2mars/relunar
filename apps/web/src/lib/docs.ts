@@ -244,3 +244,27 @@ export function getDocPage(slug: string): DocPage | undefined {
 export function getAllDocSlugs(): string[] {
   return docsPages.map((page) => page.slug);
 }
+
+export type DocNavItem = {
+  slug: string;
+  title: string;
+};
+
+export function getFlatDocNav(): DocNavItem[] {
+  return docsNavigation.flatMap((section) => [...section.items]);
+}
+
+export function getDocNeighbors(slug: string): {
+  previous: DocNavItem | null;
+  next: DocNavItem | null;
+} {
+  const items = getFlatDocNav();
+  const index = items.findIndex((item) => item.slug === slug);
+  if (index === -1) {
+    return { previous: null, next: null };
+  }
+  return {
+    previous: items[index - 1] ?? null,
+    next: items[index + 1] ?? null,
+  };
+}

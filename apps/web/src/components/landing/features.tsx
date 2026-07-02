@@ -1,4 +1,5 @@
 import { Lock, Shield, Sparkles, Workflow } from "lucide-react";
+import { Reveal } from "@/components/reveal";
 import { Section } from "@/components/section";
 
 const features = [
@@ -26,20 +27,18 @@ const features = [
 
 export function FeaturesSection() {
   return (
-    <Section
-      eyebrow="Principles"
-      title="Trustworthy automation starts with restraint."
-      align="center"
-    >
-      <div className="grid gap-5 md:grid-cols-2">
-        {features.map((feature) => (
-          <article key={feature.title} className="rounded-[1.5rem] border border-border bg-background-elevated p-8">
-            <div className="mb-5 inline-flex size-11 items-center justify-center rounded-2xl bg-accent-soft text-accent">
-              <feature.icon className="size-5" strokeWidth={1.6} />
-            </div>
-            <h3 className="text-xl font-medium tracking-[-0.02em]">{feature.title}</h3>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-foreground-muted">{feature.description}</p>
-          </article>
+    <Section eyebrow="Principles" title="Trustworthy automation starts with restraint." align="center">
+      <div className="grid gap-5 md:grid-cols-2 md:gap-6">
+        {features.map((feature, index) => (
+          <Reveal key={feature.title} delay={index * 0.05}>
+            <article className="card-interactive h-full rounded-[1.5rem] border border-border bg-background-elevated p-8 md:p-9">
+              <div className="mb-5 inline-flex size-11 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+                <feature.icon className="size-5" strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-medium tracking-[-0.025em] text-foreground">{feature.title}</h3>
+              <p className="mt-3 max-w-md text-sm leading-[1.65] text-foreground-muted">{feature.description}</p>
+            </article>
+          </Reveal>
         ))}
       </div>
     </Section>

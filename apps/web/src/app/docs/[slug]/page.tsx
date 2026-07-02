@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DocsContent } from "@/components/docs/docs-content";
-import { DocsSidebar } from "@/components/docs/docs-sidebar";
+import { DocsLayout } from "@/components/docs/docs-layout";
+import { DocsPager } from "@/components/docs/docs-pager";
 import { getAllDocSlugs, getDocPage } from "@/lib/docs";
 import { siteConfig } from "@/lib/site";
 
@@ -39,16 +40,18 @@ export default async function DocPage({ params }: PageProps) {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl gap-10 px-6 py-16 md:py-20">
-      <DocsSidebar activeSlug={slug} />
-      <article className="min-w-0 flex-1">
-        <p className="text-xs font-medium uppercase tracking-[0.24em] text-foreground-subtle">Documentation</p>
-        <h1 className="display-serif mt-4 text-4xl tracking-[-0.03em] text-foreground md:text-5xl">{page.title}</h1>
-        <p className="mt-4 max-w-2xl text-lg leading-relaxed text-foreground-muted">{page.description}</p>
+    <DocsLayout activeSlug={slug}>
+      <article>
+        <p className="eyebrow">Documentation</p>
+        <h1 className="display-serif mt-4 text-balance text-4xl tracking-[-0.035em] text-foreground md:text-5xl">
+          {page.title}
+        </h1>
+        <p className="mt-4 max-w-2xl text-lg leading-[1.65] text-foreground-muted">{page.description}</p>
         <div className="mt-10 border-t border-border pt-10">
           <DocsContent content={page.content} />
         </div>
+        <DocsPager slug={slug} />
       </article>
-    </div>
+    </DocsLayout>
   );
 }
