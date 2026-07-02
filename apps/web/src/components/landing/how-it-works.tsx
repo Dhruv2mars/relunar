@@ -1,10 +1,10 @@
-import { Bot, Cloud, FileText, Terminal } from "lucide-react";
+import { Cloud, FileText, Search, Terminal } from "lucide-react";
 import { Reveal } from "@/components/reveal";
 import { Section } from "@/components/section";
 
 const steps = [
   {
-    icon: Bot,
+    icon: Search,
     title: "Your agent chooses the issue",
     description:
       "Ask Cursor, Codex, or Claude Code to investigate open issues. The agent decides priority and whether more context is needed.",
@@ -25,7 +25,7 @@ const steps = [
     icon: Cloud,
     title: "Comment when you mean it",
     description:
-      "GitHub comments require --comment. No surprise bot posts. You stay in control of what maintainers see publicly.",
+      "GitHub comments require --comment. No surprise public writes. You stay in control of what maintainers see publicly.",
   },
 ] as const;
 
@@ -35,7 +35,7 @@ export function HowItWorksSection() {
       id="how-it-works"
       eyebrow="How it works"
       title="Agent drives. Relunar executes."
-      description="Relunar is not another autonomous bot. It is the elegant plumbing layer between your coding agent and reproducible issue evidence."
+      description="Relunar is the local plumbing layer between your coding agent and reproducible issue evidence."
     >
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4 xl:gap-4">
         {steps.map((step, index) => (

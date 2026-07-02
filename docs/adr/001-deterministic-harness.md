@@ -10,13 +10,13 @@ Accepted
 
 ## Context
 
-Relunar helps maintainers reproduce GitHub issues with evidence from a clean environment. The first product direction was a server-first GitHub bot with webhooks, a queue, and hosted infrastructure.
+Relunar helps maintainers reproduce GitHub issues with evidence from a clean environment.
 
-That shape adds cost and trust burden before the workflow is proven:
+Hosted control planes add cost and trust burden before the workflow is proven:
 
-- Relunar would need hosted infrastructure.
-- Relunar would custody long-lived integration secrets.
-- Maintainers would need to trust background automation.
+- Relunar would need to operate infrastructure.
+- Relunar would custody long-lived user secrets.
+- Maintainers would need to trust background automation owned by Relunar.
 - Coding agents would still be the natural driver for issue selection and follow-up.
 
 The stronger v1 shape is local and agent-native. A maintainer asks a coding agent to investigate issues; the agent calls a deterministic CLI harness.
@@ -38,7 +38,7 @@ Relunar will:
 9. post GitHub comments only when `--comment` is explicit
 10. clean up sandbox resources
 
-Relunar will not include a hosted app, queue, database, webhook receiver, dashboard, or built-in AI agent in v1.
+Relunar will not include a hosted control plane, background automation owned by Relunar, central secret custody, billing, organization management, or a built-in AI agent in v1.
 
 ## Consequences
 
@@ -54,7 +54,7 @@ Relunar will not include a hosted app, queue, database, webhook receiver, dashbo
 ### Negative
 
 - Maintainer machine must initiate runs.
-- No automatic webhook mode in v1.
+- No Relunar-owned background automation in v1.
 - Daytona account setup is required per user.
 - Batch throughput is intentionally modest.
 
@@ -66,9 +66,9 @@ Relunar will not include a hosted app, queue, database, webhook receiver, dashbo
 
 ## Alternatives Considered
 
-### Hosted GitHub App First
+### Hosted Control Plane First
 
-Rejected for v1. It creates infrastructure, queueing, secret custody, and webhook complexity before validating maintainer demand.
+Rejected for v1. It creates operations, secret custody, and background automation complexity before validating maintainer demand.
 
 ### Built-in AI Agent
 
