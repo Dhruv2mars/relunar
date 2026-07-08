@@ -28,10 +28,6 @@ export function SiteHeader() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
   return (
     <header
       className={cn(
@@ -101,6 +97,7 @@ export function SiteHeader() {
                 href={item.href}
                 target="_blank"
                 rel="noreferrer"
+                onClick={() => setOpen(false)}
                 className="rounded-xl px-3 py-3 text-sm text-foreground-muted transition-colors hover:bg-surface hover:text-foreground"
               >
                 {item.label}
@@ -109,6 +106,7 @@ export function SiteHeader() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setOpen(false)}
                 className="rounded-xl px-3 py-3 text-sm text-foreground-muted transition-colors hover:bg-surface hover:text-foreground"
               >
                 {item.label}
@@ -117,6 +115,7 @@ export function SiteHeader() {
           )}
           <Link
             href="/docs/getting-started"
+            onClick={() => setOpen(false)}
             className="mt-2 rounded-full bg-foreground px-4 py-3 text-center text-sm font-medium text-background"
           >
             Get started
