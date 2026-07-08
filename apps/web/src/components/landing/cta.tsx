@@ -1,4 +1,5 @@
 import { Button } from "@/components/button";
+import { LogoMark } from "@/components/logo-mark";
 import { Reveal } from "@/components/reveal";
 import { siteConfig } from "@/lib/site";
 
@@ -13,6 +14,10 @@ export function CtaSection() {
               style={{
                 background: "radial-gradient(circle at top right, var(--cta-glow), transparent 42%)",
               }}
+            />
+            <LogoMark
+              variant="white"
+              className="pointer-events-none absolute -right-10 -top-12 size-48 opacity-[0.08] md:-right-12 md:-top-16 md:size-72"
             />
             <div className="relative max-w-2xl">
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-inverse-subtle">Ready when you are</p>

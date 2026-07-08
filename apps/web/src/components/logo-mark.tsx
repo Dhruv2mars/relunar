@@ -1,32 +1,52 @@
-"use client";
+import Image from "next/image";
+import { cn } from "@/lib/cn";
 
-import { useId } from "react";
-import {
-  LOGO_CENTER,
-  LOGO_INNER_OFFSET,
-  LOGO_INNER_RADIUS,
-  LOGO_OUTER_RADIUS,
-  LOGO_VIEWBOX,
-} from "@/lib/logo-geometry";
+type LogoMarkProps = {
+  className?: string;
+  variant?: "auto" | "black" | "white";
+};
 
-export function LogoMark({ className }: { className?: string }) {
-  const maskId = useId();
+const logoSources = {
+  black: "/brand/relunar-blackfill.svg",
+  white: "/brand/relunar-whitefill.svg",
+} as const;
+
+export function LogoMark({ className, variant = "auto" }: LogoMarkProps) {
+  if (variant !== "auto") {
+    return (
+      <Image
+        src={logoSources[variant]}
+        width={1080}
+        height={1080}
+        alt=""
+        aria-hidden
+        className={cn("block shrink-0", className)}
+        draggable={false}
+        unoptimized
+      />
+    );
+  }
 
   return (
-    <svg viewBox={`0 0 ${LOGO_VIEWBOX} ${LOGO_VIEWBOX}`} aria-hidden className={className} fill="none">
-      <defs>
-        <mask id={maskId}>
-          <rect width={LOGO_VIEWBOX} height={LOGO_VIEWBOX} fill="white" />
-          <circle cx={LOGO_CENTER + LOGO_INNER_OFFSET} cy={LOGO_CENTER} r={LOGO_INNER_RADIUS} fill="black" />
-        </mask>
-      </defs>
-      <circle
-        cx={LOGO_CENTER}
-        cy={LOGO_CENTER}
-        r={LOGO_OUTER_RADIUS}
-        fill="currentColor"
-        mask={`url(#${maskId})`}
+    <span className={cn("relative block shrink-0", className)} aria-hidden>
+      <Image
+        src={logoSources.black}
+        width={1080}
+        height={1080}
+        alt=""
+        className="block size-full dark:hidden"
+        draggable={false}
+        unoptimized
       />
-    </svg>
+      <Image
+        src={logoSources.white}
+        width={1080}
+        height={1080}
+        alt=""
+        className="hidden size-full dark:block"
+        draggable={false}
+        unoptimized
+      />
+    </span>
   );
 }

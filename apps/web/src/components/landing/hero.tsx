@@ -5,6 +5,7 @@ import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/button";
 import { CodePanel } from "@/components/code-panel";
 import { CopyButton } from "@/components/copy-button";
+import { LogoMark } from "@/components/logo-mark";
 import { siteConfig } from "@/lib/site";
 
 const installLines = ["relunar setup", "relunar repro 123"] as const;
@@ -22,6 +23,7 @@ export function Hero() {
           transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
           className="mx-auto max-w-4xl text-center"
         >
+          <LogoMark className="mx-auto mb-7 size-16 md:mb-8 md:size-20" />
           <div className="mb-8 inline-flex items-center gap-2.5 rounded-full border border-border bg-surface px-4 py-1.5 text-xs font-medium text-foreground-muted backdrop-blur-md">
             <span className="relative flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-accent opacity-30" />
