@@ -18,6 +18,7 @@ describe("release contract", () => {
     expect(packageJson.private).toBeUndefined();
     expect(packageJson.bin.relunar).toBe("dist/index.js");
     expect(packageJson.files).toContain("dist");
+    expect(packageJson.files).toContain("scripts");
     expect(packageJson.files).toContain("LICENSE");
     expect(packageJson.scripts.build).toContain("--packages=external");
     expect(packageJson.publishConfig.access).toBe("public");

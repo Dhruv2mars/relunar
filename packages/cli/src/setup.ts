@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
 import { isRepoSlug, linkRepo, readGlobalConfig, writeGlobalConfig } from "./config";
-import { resolveDaytonaApiKey, resolveGithubToken, writeSecret, type SecretName } from "./credentials";
+import { resolveDaytonaApiKey, resolveGithubToken, writeSecret, type SecretBackend, type SecretName } from "./credentials";
 import type { RepoSlug } from "./types";
 
 const execFileAsync = promisify(execFile);
@@ -24,7 +24,7 @@ export type SetupOptions = {
   configPath: string;
   io: SetupIO;
   prompt?: SetupPrompter | undefined;
-  secretWriter?: ((name: SecretName, value: string) => Promise<void>) | undefined;
+  secretWriter?: ((name: SecretName, value: string) => Promise<SecretBackend | void>) | undefined;
 };
 
 export type SetupStatus = {
@@ -136,30 +136,106 @@ export async function runInteractiveSetup(options: SetupOptions): Promise<boolea
 }
 
 function createNodePrompter(): SetupPrompter {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
   return {
     text: async (message, options) => {
-      const suffix = options?.defaultValue ? ` (${options.defaultValue})` : "";
-      const secretNote = options?.secret ? " (input visible)" : "";
-      const answer = await rl.question(`${message}${suffix}${secretNote}: `);
-      return answer.trim() || options?.defaultValue || "";
+      if (options?.secret) {
+        return questionSecret(message);
+      }
+      return questionText(message, options?.defaultValue);
     },
     confirm: async (message, defaultValue = false) => {
-      const suffix = defaultValue ? "Y/n" : "y/N";
-      const answer = (await rl.question(`${message} [${suffix}]: `)).trim().toLowerCase();
+      const answer = (await questionText(`${message} [${defaultValue ? "Y/n" : "y/N"}]`)).trim().toLowerCase();
       if (!answer) {
         return defaultValue;
       }
       return answer === "y" || answer === "yes";
     },
-    close: () => {
-      rl.close();
-    },
+    close: () => undefined,
   };
+}
+
+async function questionText(message: string, defaultValue?: string): Promise<string> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const suffix = defaultValue ? ` (${defaultValue})` : "";
+    const answer = await rl.question(`${message}${suffix}: `);
+    return answer.trim() || defaultValue || "";
+  } finally {
+    rl.close();
+  }
+}
+
+async function questionSecret(message: string): Promise<string> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY || typeof process.stdin.setRawMode !== "function") {
+    return questionText(`${message} (hidden input unavailable)`);
+  }
+
+  return new Promise((resolve, reject) => {
+    let value = "";
+    let escapeMode: "none" | "esc" | "csi" = "none";
+    const input = process.stdin;
+    const wasRaw = input.isRaw;
+
+    const cleanup = () => {
+      input.off("data", onData);
+      input.setRawMode(wasRaw);
+      input.pause();
+    };
+
+    const finish = () => {
+      process.stdout.write("\n");
+      cleanup();
+      resolve(value);
+    };
+
+    const cancel = () => {
+      process.stdout.write("\n");
+      cleanup();
+      reject(new Error("Input cancelled."));
+    };
+
+    const onData = (chunk: Buffer | string) => {
+      for (const char of chunk.toString("utf8")) {
+        if (escapeMode === "csi") {
+          if (char >= "@" && char <= "~") {
+            escapeMode = "none";
+          }
+          continue;
+        }
+        if (escapeMode === "esc") {
+          escapeMode = char === "[" ? "csi" : "none";
+          continue;
+        }
+        if (char === "\u0003") {
+          cancel();
+          return;
+        }
+        if (char === "\u001b") {
+          escapeMode = "esc";
+          continue;
+        }
+        if (char === "\r" || char === "\n") {
+          finish();
+          return;
+        }
+        if (char === "\u007f" || char === "\b") {
+          value = value.slice(0, -1);
+          continue;
+        }
+        if (char >= " ") {
+          value += char;
+        }
+      }
+    };
+
+    process.stdout.write(`${message}: `);
+    input.setRawMode(true);
+    input.resume();
+    input.on("data", onData);
+  });
 }
 
 async function detectGitHubRepo(cwd: string): Promise<RepoSlug | null> {

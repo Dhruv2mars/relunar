@@ -143,6 +143,18 @@ describe("cli", () => {
       expect(daytona.code).toBe(0);
       expect(daytona.stdout).toContain("Daytona auth available from environment");
       expect(secrets).toEqual([{ name: "github-token", value: "gh-token" }]);
+
+      const savedDaytona = await invoke(["auth", "daytona", "--api-key", "daytona-from-arg"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+      }, {
+        secretWriter: async (name, value) => {
+          secrets.push({ name, value });
+          return "local";
+        },
+      });
+      expect(savedDaytona.code).toBe(0);
+      expect(savedDaytona.stdout).toContain("Daytona auth saved to local secret store");
+      expect(secrets).toContainEqual({ name: "daytona-api-key", value: "daytona-from-arg" });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -265,7 +277,7 @@ async function invoke(
   env: NodeJS.ProcessEnv = {},
   extra: {
     prompt?: SetupPrompter;
-    secretWriter?: (name: SecretName, value: string) => Promise<void>;
+    secretWriter?: (name: SecretName, value: string) => Promise<"keychain" | "local" | void>;
   } = {},
 ) {
   let stdout = "";

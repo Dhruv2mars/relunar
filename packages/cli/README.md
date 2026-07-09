@@ -85,11 +85,21 @@ GitHub token resolution:
 1. `RELUNAR_GITHUB_TOKEN`
 2. `gh auth token`
 3. OS keychain value saved by `relunar auth github --token <token>`
+4. Local Relunar secret file saved by `relunar auth github --token <token>`
 
 Daytona API key resolution:
 
 1. `RELUNAR_DAYTONA_API_KEY`
 2. OS keychain value saved by `relunar auth daytona --api-key <key>`
+3. Local Relunar secret file saved by `relunar auth daytona --api-key <key>`
+
+On macOS, Relunar prefers the OS keychain. On Linux, Windows, or when macOS keychain access is unavailable, Relunar stores secrets in `~/.config/relunar/secrets.json` with owner-only file permissions where the platform supports them.
+
+Real Daytona/GitHub E2E smoke test:
+
+```sh
+RELUNAR_GITHUB_TOKEN=... RELUNAR_DAYTONA_API_KEY=... bun run test:e2e
+```
 
 Optional Daytona settings:
 
