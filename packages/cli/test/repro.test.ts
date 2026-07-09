@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runRepro } from "../src/repro";
@@ -70,6 +70,45 @@ describe("repro runner", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("uses local relunar config from target repo", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-repro-local-config-"));
+    try {
+      await writeFile(
+        join(cwd, ".relunar.yml"),
+        "version: 1\nsetup:\n  - npm install\nbaseline:\n  - npm run test:ci\ncommandTimeoutSeconds: 900\nreport:\n  maxLogLines: 7\n",
+        "utf8",
+      );
+      const sandbox = new FakeSandbox([
+        { match: "git clone", result: ok("") },
+        { match: "git rev-parse", result: ok("abc123\n") },
+        { match: "npm install", result: ok("installed") },
+        { match: "npm run test:ci", result: ok("passed") },
+      ]);
+
+      const report = await runRepro({
+        cwd,
+        repo: "owner/repo",
+        issue: sampleIssue(),
+        githubToken: "secret-token",
+        sandboxProvider: provider(sandbox),
+      });
+
+      expect(report.status).toBe("passed");
+      expect(report.commands.map((command) => command.command)).toEqual([
+        "git clone --depth 1 https://x-access-token:$GITHUB_TOKEN@github.com/owner/repo.git repo",
+        "npm install",
+        "npm run test:ci",
+      ]);
+      expect(sandbox.commands).not.toContain("test -f .relunar.yml && cat .relunar.yml || true");
+      expect(sandbox.calls.map((call) => call.timeoutSeconds)).toEqual([900, 900, 900, 900]);
+
+      const raw = await readFile(join(cwd, ".relunar", "runs", report.runId, "report.json"), "utf8");
+      expect(JSON.parse(raw).commands[1].stdout).toBe("installed");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
 
 function sampleIssue(): Issue {
@@ -96,12 +135,14 @@ class FakeSandbox implements SandboxSession {
   readonly id = "fake-sandbox";
   readonly target = "test";
   readonly commands: string[] = [];
+  readonly calls: Array<{ command: string; cwd: string; timeoutSeconds: number; env?: Record<string, string> | undefined }> = [];
   disposed = false;
 
   constructor(private readonly fixtures: Array<{ match: string; result: SandboxExecResult }>) {}
 
-  async run(command: string): Promise<SandboxExecResult> {
+  async run(command: string, cwd: string, timeoutSeconds: number, env?: Record<string, string>): Promise<SandboxExecResult> {
     this.commands.push(command);
+    this.calls.push({ command, cwd, timeoutSeconds, env });
     const fixture = this.fixtures.find((item) => command.includes(item.match));
     if (!fixture) {
       throw new Error(`unexpected command: ${command}`);

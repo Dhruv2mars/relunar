@@ -66,11 +66,13 @@ baseline:
   - bun run typecheck
   - bun test
 
+commandTimeoutSeconds: 300
+
 report:
   maxLogLines: 200
 ```
 
-Relunar clones the linked GitHub repo into a Daytona sandbox, reads `.relunar.yml`, runs `setup`, then runs `baseline`. It writes reports locally:
+Relunar clones the linked GitHub repo into a Daytona sandbox, reads your local `.relunar.yml`, runs `setup`, then runs `baseline`. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. It writes reports locally:
 
 ```txt
 .relunar/runs/<run-id>/

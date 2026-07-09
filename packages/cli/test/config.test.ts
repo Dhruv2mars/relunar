@@ -7,10 +7,16 @@ import { defaultRelunarConfig, linkRepo, parseRelunarConfig, readGlobalConfig, w
 describe("relunar config", () => {
   test("parses defaultable repo config", () => {
     expect(parseRelunarConfig("version: 1\n").baseline).toEqual(defaultRelunarConfig.baseline);
+    expect(parseRelunarConfig("version: 1\n").commandTimeoutSeconds).toBe(300);
   });
 
   test("rejects invalid command shapes", () => {
     expect(() => parseRelunarConfig("version: 1\nsetup: bad\n")).toThrow();
+  });
+
+  test("parses command timeout", () => {
+    expect(parseRelunarConfig("version: 1\ncommandTimeoutSeconds: 900\n").commandTimeoutSeconds).toBe(900);
+    expect(() => parseRelunarConfig("version: 1\ncommandTimeoutSeconds: 0\n")).toThrow();
   });
 
   test("writes init config without overwriting existing file", async () => {
