@@ -32,14 +32,14 @@ const userEnv = {
   ...process.env,
   XDG_CONFIG_HOME: join(temp, "config"),
   RELUNAR_GITHUB_TOKEN: githubToken,
+  RELUNAR_DAYTONA_API_KEY: daytonaApiKey,
   RELUNAR_SECRET_STORE: "local",
 };
-delete userEnv.RELUNAR_DAYTONA_API_KEY;
 delete userEnv.DAYTONA_API_KEY;
 
 try {
   run(["init"]);
-  run(["auth", "daytona", "--api-key", daytonaApiKey]);
+  run(["auth", "daytona"]);
   run(["repo", "link", repo]);
 
   const doctor = JSON.parse(run(["doctor", "--json"]));
@@ -70,13 +70,30 @@ try {
 }
 
 function run(args) {
-  return execFileSync(process.execPath, [cliBin, ...args], {
-    cwd: temp,
-    env: userEnv,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 900_000,
-  });
+  try {
+    return execFileSync(process.execPath, [cliBin, ...args], {
+      cwd: temp,
+      env: userEnv,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 900_000,
+    });
+  } catch (error) {
+    const output = [error.stderr, error.stdout]
+      .filter((value) => typeof value === "string" && value.length > 0)
+      .join("\n")
+      .trim();
+    const lines = [
+      `command failed: relunar ${args.join(" ")}`,
+      `status: ${error.status ?? "null"}`,
+      `signal: ${error.signal ?? "null"}`,
+    ];
+    if (output) {
+      lines.push("output:");
+      lines.push(output.split("\n").slice(-40).join("\n"));
+    }
+    fail(lines.join("\n"));
+  }
 }
 
 function assertCheck(checks, name) {

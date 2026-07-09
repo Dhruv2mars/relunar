@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
 import { isRepoSlug, linkRepo, readGlobalConfig, writeGlobalConfig } from "./config";
-import { resolveDaytonaApiKey, resolveGithubToken, writeSecret, type SecretName } from "./credentials";
+import { resolveDaytonaApiKey, resolveGithubToken, writeSecret, type SecretBackend, type SecretName } from "./credentials";
 import type { RepoSlug } from "./types";
 
 const execFileAsync = promisify(execFile);
@@ -24,7 +24,7 @@ export type SetupOptions = {
   configPath: string;
   io: SetupIO;
   prompt?: SetupPrompter | undefined;
-  secretWriter?: ((name: SecretName, value: string) => Promise<void>) | undefined;
+  secretWriter?: ((name: SecretName, value: string) => Promise<SecretBackend | void>) | undefined;
 };
 
 export type SetupStatus = {
@@ -175,6 +175,7 @@ async function questionSecret(message: string): Promise<string> {
 
   return new Promise((resolve, reject) => {
     let value = "";
+    let escapeMode: "none" | "esc" | "csi" = "none";
     const input = process.stdin;
     const wasRaw = input.isRaw;
 
@@ -198,9 +199,23 @@ async function questionSecret(message: string): Promise<string> {
 
     const onData = (chunk: Buffer | string) => {
       for (const char of chunk.toString("utf8")) {
+        if (escapeMode === "csi") {
+          if (char >= "@" && char <= "~") {
+            escapeMode = "none";
+          }
+          continue;
+        }
+        if (escapeMode === "esc") {
+          escapeMode = char === "[" ? "csi" : "none";
+          continue;
+        }
         if (char === "\u0003") {
           cancel();
           return;
+        }
+        if (char === "\u001b") {
+          escapeMode = "esc";
+          continue;
         }
         if (char === "\r" || char === "\n") {
           finish();
@@ -210,7 +225,7 @@ async function questionSecret(message: string): Promise<string> {
           value = value.slice(0, -1);
           continue;
         }
-        if (char >= " " && char !== "\u001b") {
+        if (char >= " ") {
           value += char;
         }
       }

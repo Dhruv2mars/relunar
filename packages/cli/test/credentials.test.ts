@@ -6,10 +6,10 @@ import { resolveDaytonaApiKey, resolveGithubToken, writeSecret } from "../src/cr
 
 describe("credentials", () => {
   test("stores and resolves local Daytona secrets", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "relunar-secrets-daytona-"));
+      const dir = await mkdtemp(join(tmpdir(), "relunar-secrets-daytona-"));
     try {
       const env = localSecretEnv(dir);
-      await writeSecret("daytona-api-key", "daytona-local", env);
+      await expect(writeSecret("daytona-api-key", "daytona-local", env)).resolves.toBe("local");
 
       expect(await resolveDaytonaApiKey(env)).toBe("daytona-local");
       expect(await readSecretFile(dir)).toContain("daytona-local");
@@ -41,6 +41,7 @@ describe("credentials", () => {
       await writeSecret("daytona-api-key", "daytona-local", env);
 
       expect(await resolveDaytonaApiKey({ ...env, RELUNAR_DAYTONA_API_KEY: "daytona-env" })).toBe("daytona-env");
+      expect(await resolveDaytonaApiKey({ ...env, RELUNAR_DAYTONA_API_KEY: "" })).toBe("daytona-local");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

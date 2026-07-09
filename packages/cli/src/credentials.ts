@@ -8,6 +8,7 @@ const execFileAsync = promisify(execFile);
 const servicePrefix = "relunar";
 
 export type SecretName = "github-token" | "daytona-api-key";
+export type SecretBackend = "keychain" | "local";
 
 export async function resolveGithubToken(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   if (env.RELUNAR_GITHUB_TOKEN) {
@@ -25,34 +26,48 @@ export async function resolveGithubToken(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export async function resolveDaytonaApiKey(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
-  return env.RELUNAR_DAYTONA_API_KEY ?? (await readSecret("daytona-api-key", env));
+  return nonEmpty(env.RELUNAR_DAYTONA_API_KEY) ?? (await readSecret("daytona-api-key", env));
 }
 
-export async function writeSecret(name: SecretName, value: string, env: NodeJS.ProcessEnv = process.env): Promise<void> {
+export async function writeSecret(
+  name: SecretName,
+  value: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SecretBackend> {
   if (env.RELUNAR_SECRET_STORE === "local") {
     await writeLocalSecret(name, value, env);
-    return;
+    return "local";
   }
 
   if (platform() === "darwin") {
     try {
       await writeKeychainSecret(name, value);
-      return;
+      return "keychain";
     } catch (error) {
       if (env.RELUNAR_SECRET_STORE === "keychain") {
         throw error;
       }
     }
+  } else if (env.RELUNAR_SECRET_STORE === "keychain") {
+    throw new Error(`OS keychain write unsupported on ${platform()}; unset RELUNAR_SECRET_STORE or set it to local`);
   }
 
   await writeLocalSecret(name, value, env);
+  return "local";
 }
 
 async function readSecret(name: SecretName, env: NodeJS.ProcessEnv): Promise<string | null> {
-  if (env.RELUNAR_SECRET_STORE !== "local" && platform() === "darwin") {
+  if (env.RELUNAR_SECRET_STORE === "local") {
+    return readLocalSecret(name, env);
+  }
+
+  if (platform() === "darwin") {
     const keychainSecret = await readKeychainSecret(name);
     if (keychainSecret) {
       return keychainSecret;
+    }
+    if (env.RELUNAR_SECRET_STORE === "keychain") {
+      return null;
     }
   }
 
@@ -98,7 +113,7 @@ async function writeLocalSecret(name: SecretName, value: string, env: NodeJS.Pro
   };
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await chmod(path, 0o600).catch(() => undefined);
+  await chmod(path, 0o600);
 }
 
 async function readLocalSecret(name: SecretName, env: NodeJS.ProcessEnv): Promise<string | null> {
@@ -147,6 +162,10 @@ function isLocalSecrets(value: unknown): value is LocalSecrets {
   }
   const secrets = value as Record<string, unknown>;
   return Object.values(secrets).every((secret) => typeof secret === "string");
+}
+
+function nonEmpty(value: string | undefined): string | null {
+  return value && value.length > 0 ? value : null;
 }
 
 type LocalSecrets = Partial<Record<SecretName, string>>;

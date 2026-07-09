@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs, flagBoolean, flagNeedsValue, flagPositiveInteger, flagString } from "./args";
 import { findLinkedRepo, globalConfigPath, isRepoSlug, linkRepo, readGlobalConfig, writeGlobalConfig, writeRelunarConfig } from "./config";
-import { resolveDaytonaApiKey, resolveGithubToken, writeSecret } from "./credentials";
+import { resolveDaytonaApiKey, resolveGithubToken, writeSecret, type SecretBackend } from "./credentials";
 import { DaytonaSandboxProvider } from "./daytona";
 import { GitHubClient } from "./github";
 import { renderMarkdownReport } from "./reports";
@@ -24,7 +24,7 @@ export type CliDeps = {
   env: NodeJS.ProcessEnv;
   io: CliIO;
   prompt?: SetupPrompter | undefined;
-  secretWriter?: ((name: SecretName, value: string) => Promise<void>) | undefined;
+  secretWriter?: ((name: SecretName, value: string) => Promise<SecretBackend | void>) | undefined;
   isInteractive?: boolean | undefined;
 };
 
@@ -204,8 +204,9 @@ async function auth(subcommand: string | undefined, flags: Record<string, string
       deps.io.stderr("No Daytona API key. Pass --api-key or set RELUNAR_DAYTONA_API_KEY.\n");
       return 1;
     }
+    let savedBackend: SecretBackend | void = undefined;
     if (apiKeyArg) {
-      await (deps.secretWriter ?? writeSecret)("daytona-api-key", apiKey);
+      savedBackend = await (deps.secretWriter ?? writeSecret)("daytona-api-key", apiKey);
     }
     const config = await readGlobalConfig(configPath(deps));
     const apiUrl = flagString(flags, "api-url") ?? deps.env.RELUNAR_DAYTONA_API_URL ?? config.daytona?.apiUrl;
@@ -217,12 +218,18 @@ async function auth(subcommand: string | undefined, flags: Record<string, string
         ...(target ? { target } : {}),
       },
     }, configPath(deps));
-    deps.io.stdout(apiKeyArg ? "Daytona auth saved to OS keychain\n" : "Daytona auth available from environment\n");
+    deps.io.stdout(
+      apiKeyArg ? `Daytona auth saved to ${secretBackendLabel(savedBackend)}\n` : "Daytona auth available from environment\n",
+    );
     return 0;
   }
 
   deps.io.stderr("Usage: relunar auth github|daytona\n");
   return 1;
+}
+
+function secretBackendLabel(backend: SecretBackend | void): string {
+  return backend === "local" ? "local secret store" : "OS keychain";
 }
 
 async function repoLink(repo: string | undefined, deps: CliDeps): Promise<number> {
