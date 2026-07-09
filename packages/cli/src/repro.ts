@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { parseRelunarConfig, defaultRelunarConfig } from "./config";
 import { redactSecret } from "./reports";
 import { createRunId, writeRun } from "./runs";
@@ -15,13 +17,19 @@ export type ReproInput = {
 export async function runRepro(input: ReproInput): Promise<RunReport> {
   const runId = createRunId(input.issue.number);
   const startedAt = new Date().toISOString();
-  const commandTimeoutSeconds = input.commandTimeoutSeconds ?? 300;
   const commands: CommandEvidence[] = [];
   let sandbox: SandboxSession | null = null;
   let commit: string | null = null;
   let config: RelunarConfig = defaultRelunarConfig;
+  let commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
 
   try {
+    const localConfig = await readLocalConfig(input.cwd);
+    const hasLocalConfig = localConfig !== null;
+    if (localConfig) {
+      config = localConfig;
+      commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
+    }
     sandbox = await input.sandboxProvider.createSandbox({ runId });
 
     commands.push(
@@ -43,9 +51,12 @@ export async function runRepro(input: ReproInput): Promise<RunReport> {
     const commitResult = await sandbox.run("git rev-parse --short HEAD", "repo", commandTimeoutSeconds);
     commit = commitResult.exitCode === 0 ? commitResult.stdout.trim() : null;
 
-    const configResult = await sandbox.run("test -f .relunar.yml && cat .relunar.yml || true", "repo", commandTimeoutSeconds);
-    if (configResult.stdout.trim().length > 0) {
-      config = parseRelunarConfig(configResult.stdout);
+    if (!hasLocalConfig) {
+      const configResult = await sandbox.run("test -f .relunar.yml && cat .relunar.yml || true", "repo", commandTimeoutSeconds);
+      if (configResult.stdout.trim().length > 0) {
+        config = parseRelunarConfig(configResult.stdout);
+        commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
+      }
     }
 
     for (const command of config.setup) {
@@ -155,4 +166,19 @@ async function finish(
 function lastFailed(commands: CommandEvidence[]): boolean {
   const last = commands.at(-1);
   return last?.status === "failed" || last?.status === "timed_out";
+}
+
+async function readLocalConfig(cwd: string): Promise<RelunarConfig | null> {
+  try {
+    return parseRelunarConfig(await readFile(join(cwd, ".relunar.yml"), "utf8"));
+  } catch (error) {
+    if (isNotFound(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }

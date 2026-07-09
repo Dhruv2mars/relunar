@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ const cliBin = join(cliRoot, "dist", "index.js");
 const cliSource = join(cliRoot, "src", "index.ts");
 const repo = process.env.RELUNAR_E2E_REPO ?? "Dhruv2mars/relunar";
 const issue = process.env.RELUNAR_E2E_ISSUE ?? "14";
+const commandTimeoutSeconds = parsePositiveInteger(process.env.RELUNAR_E2E_COMMAND_TIMEOUT_SECONDS ?? "900");
 const daytonaApiKey = process.env.RELUNAR_DAYTONA_API_KEY;
 const githubToken = process.env.RELUNAR_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
 
@@ -39,6 +40,7 @@ delete userEnv.DAYTONA_API_KEY;
 
 try {
   run(["init"]);
+  writeSmokeConfig(commandTimeoutSeconds);
   run(["auth", "daytona"]);
   run(["repo", "link", repo]);
 
@@ -101,6 +103,29 @@ function assertCheck(checks, name) {
   if (!check?.ok) {
     fail(`doctor check failed: ${name}`);
   }
+}
+
+function writeSmokeConfig(seconds) {
+  writeFileSync(
+    join(temp, ".relunar.yml"),
+    `version: 1
+setup:
+  - node --version
+baseline:
+  - test -f package.json
+commandTimeoutSeconds: ${seconds}
+report:
+  maxLogLines: 200
+`,
+    "utf8",
+  );
+}
+
+function parsePositiveInteger(value) {
+  if (!/^[1-9]\d*$/.test(value)) {
+    fail("RELUNAR_E2E_COMMAND_TIMEOUT_SECONDS must be a positive integer.");
+  }
+  return Number.parseInt(value, 10);
 }
 
 function renderReproFailure(report) {

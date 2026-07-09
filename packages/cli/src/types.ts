@@ -4,6 +4,7 @@ export type RelunarConfig = {
   version: 1;
   setup: string[];
   baseline: string[];
+  commandTimeoutSeconds: number;
   report: {
     maxLogLines: number;
   };

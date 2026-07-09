@@ -9,6 +9,7 @@ const configSchema = z.object({
   version: z.literal(1).default(1),
   setup: z.array(z.string().min(1)).default(["bun install"]),
   baseline: z.array(z.string().min(1)).default(["bun run typecheck", "bun test"]),
+  commandTimeoutSeconds: z.number().int().positive().default(300),
   report: z
     .object({
       maxLogLines: z.number().int().positive().default(200),
@@ -30,6 +31,7 @@ export const defaultRelunarConfig: RelunarConfig = {
   version: 1,
   setup: ["bun install"],
   baseline: ["bun run typecheck", "bun test"],
+  commandTimeoutSeconds: 300,
   report: {
     maxLogLines: 200,
   },

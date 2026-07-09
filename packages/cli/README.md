@@ -65,11 +65,13 @@ baseline:
   - bun run typecheck
   - bun test
 
+commandTimeoutSeconds: 300
+
 report:
   maxLogLines: 200
 ```
 
-`setup` installs dependencies. `baseline` is the deterministic command list Relunar runs in Daytona. Reports are written locally:
+`setup` installs dependencies. `baseline` is the deterministic command list Relunar runs in Daytona. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
 
 ```txt
 .relunar/runs/<run-id>/
