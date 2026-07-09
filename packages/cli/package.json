@@ -8,6 +8,7 @@
   },
   "files": [
     "dist",
+    "scripts",
     "skills",
     "README.md",
     "LICENSE"
@@ -16,6 +17,7 @@
     "build": "bun build src/index.ts --target=node --format=esm --packages=external --banner '#!/usr/bin/env node' --outfile dist/index.js && chmod +x dist/index.js",
     "dev": "bun src/index.ts",
     "test": "bun test",
+    "test:e2e": "bun scripts/e2e-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "prepack": "bun run build"

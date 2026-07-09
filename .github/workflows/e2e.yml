@@ -1,0 +1,52 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Repository slug to repro, ex: Dhruv2mars/relunar"
+        required: false
+        type: string
+      issue:
+        description: "Issue number to repro"
+        required: false
+        type: string
+  schedule:
+    - cron: "17 6 * * *"
+
+jobs:
+  daytona-smoke:
+    if: ${{ vars.RELUNAR_E2E_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: read
+    env:
+      RELUNAR_DAYTONA_API_KEY: ${{ secrets.RELUNAR_DAYTONA_API_KEY }}
+      RELUNAR_GITHUB_TOKEN: ${{ github.token }}
+      RELUNAR_E2E_REPO: ${{ inputs.repo || vars.RELUNAR_E2E_REPO || 'Dhruv2mars/relunar' }}
+      RELUNAR_E2E_ISSUE: ${{ inputs.issue || vars.RELUNAR_E2E_ISSUE || '14' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check Daytona secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${RELUNAR_DAYTONA_API_KEY:-}" ]; then
+            echo "RELUNAR_DAYTONA_API_KEY secret is required when RELUNAR_E2E_ENABLED=true"
+            exit 1
+          fi
+
+      - name: Run Daytona E2E smoke
+        run: bun run test:e2e
