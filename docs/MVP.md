@@ -10,9 +10,11 @@
 - `relunar auth daytona`
 - `relunar repo link owner/repo`
 - `relunar issues list --state open --limit 20 --json`
-- `relunar repro <issue>`
-- `relunar repro <issue> --comment`
-- `relunar repro --all-open --limit <n>`
+- `relunar repro start <issue>`
+- `relunar repro upload <run-id> <local-path> <remote-path>`
+- `relunar repro exec <run-id> -- <command>`
+- `relunar repro finish <run-id> --outcome <outcome> --summary <text> [--comment]`
+- `relunar repro abort <run-id>`
 - `relunar runs list`
 - `relunar runs show <run-id>`
 - `relunar skills list|get|install`
@@ -33,7 +35,7 @@ Each repro writes:
 
 - MCP server
 - Browser reproduction
-- Resume failed runs
+- Resume setup- or baseline-failed runs
 
 ## Out of Scope
 

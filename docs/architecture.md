@@ -32,7 +32,7 @@ relunar
 ## Run Flow
 
 ```txt
-relunar repro 123
+relunar repro start 123
   -> resolve linked repo
   -> resolve GitHub token
   -> resolve Daytona API key
@@ -42,6 +42,14 @@ relunar repro 123
   -> read .relunar.yml
   -> run setup commands
   -> run baseline commands
+  -> persist environment_ready report and sandbox id
+relunar repro upload <run-id> <local-path> <remote-path>
+  -> resume sandbox and upload repro input
+relunar repro exec <run-id> -- <command>
+  -> resume sandbox and append issue-specific command evidence
+relunar repro finish <run-id> --outcome <outcome> --summary <text> [--comment]
+  -> require issue-specific command evidence
+  -> record reproduced, not_reproduced, or blocked outcome
   -> write report.json, report.md, logs.txt
   -> optionally post GitHub comment
   -> cleanup sandbox

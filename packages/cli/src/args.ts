@@ -1,16 +1,23 @@
 export type ParsedArgs = {
   positionals: string[];
   flags: Record<string, string | boolean>;
+  passthrough: string[];
 };
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags: Record<string, string | boolean> = {};
+  const passthrough: string[] = [];
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (!arg) {
       continue;
+    }
+
+    if (arg === "--") {
+      passthrough.push(...argv.slice(index + 1));
+      break;
     }
 
     if (!arg.startsWith("--")) {
@@ -36,7 +43,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     flags[withoutPrefix] = true;
   }
 
-  return { positionals, flags };
+  return { positionals, flags, passthrough };
 }
 
 export function flagString(flags: Record<string, string | boolean>, name: string): string | undefined {

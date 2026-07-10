@@ -137,6 +137,7 @@ describe("repro runner", () => {
             requestedResources = input.resources;
             return sandbox;
           },
+          resumeSandbox: async () => sandbox,
         },
       });
 
@@ -165,6 +166,7 @@ function ok(stdout: string): SandboxExecResult {
 function provider(session: SandboxSession): SandboxProvider {
   return {
     createSandbox: async () => session,
+    resumeSandbox: async () => session,
   };
 }
 
@@ -186,6 +188,8 @@ class FakeSandbox implements SandboxSession {
     }
     return fixture.result;
   }
+
+  async upload(): Promise<void> {}
 
   async dispose(): Promise<void> {
     this.disposed = true;

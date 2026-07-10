@@ -34,9 +34,12 @@ Relunar will:
 5. create short-lived Daytona sandboxes
 6. clone the linked repository
 7. run `.relunar.yml` setup and baseline commands
-8. write local JSON, markdown, and logs
-9. post GitHub comments only when `--comment` is explicit
-10. clean up sandbox resources
+8. keep environment-ready sandboxes available for agent-driven issue investigation
+9. capture uploaded inputs and issue-specific command evidence
+10. require an explicit outcome and summary before finalization
+11. write local JSON, markdown, and logs
+12. post GitHub comments only for finalized evidence when `--comment` is explicit
+13. clean up sandbox resources on finish or abort
 
 Relunar will not include a hosted control plane, background automation owned by Relunar, central secret custody, billing, organization management, or a built-in AI agent in v1.
 

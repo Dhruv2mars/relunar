@@ -11,7 +11,8 @@ describe("cli", () => {
   test("prints help", async () => {
     const output = await invoke(["help"]);
     expect(output.code).toBe(0);
-    expect(output.stdout).toContain("relunar repro <issue-number>");
+    expect(output.stdout).toContain("relunar repro start <issue-number>");
+    expect(output.stdout).toContain("relunar repro finish <run-id>");
     expect(output.stdout).toContain("Agent workflow");
     expect(output.stdout).toContain("Machine setup");
   });
@@ -27,7 +28,8 @@ describe("cli", () => {
     expect(output.code).toBe(0);
     expect(output.stdout).toContain("Start with `relunar doctor --json`");
     expect(output.stdout).toContain("relunar issues list --state open --limit 20 --json");
-    expect(output.stdout).toContain("Do not post GitHub comments unless");
+    expect(output.stdout).toContain("Put `--comment` only on `repro finish`");
+    expect(output.stdout).toContain("issue-specific command evidence");
     expect(output.stdout).toContain("relunar runs show <run-id> --json");
   });
 

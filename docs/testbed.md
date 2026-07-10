@@ -65,8 +65,9 @@ cd "$DEV_GITHUB/testbeds/typescript-relunar-testbed"
 relunar init
 relunar repo link Dhruv2mars/typescript-relunar-testbed
 relunar issues list --state open --limit 5
-relunar repro <issue-number>
-relunar repro <issue-number> --comment
+relunar repro start <issue-number>
+relunar repro exec <run-id> -- <issue-specific-command>
+relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> --comment
 ```
 
 These commands are examples of the later agent-owned workflow. They are not part of testbed construction.

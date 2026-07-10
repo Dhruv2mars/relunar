@@ -6,13 +6,14 @@ Use Relunar when a maintainer asks you to reproduce GitHub issues in a repositor
 
 - Start with `relunar doctor --json`.
 - Use bounded JSON output when planning: `relunar issues list --state open --limit 20 --json`.
-- Prefer one issue first before batch work: `relunar repro 123`.
+- Complete one issue lifecycle before starting the next.
 - Read reports with `relunar runs show <run-id> --json` when deciding next steps.
-- Do not post GitHub comments unless the user asks, or the command includes `--comment`.
-- `relunar repro` validates clean-environment setup and baseline only. It does not itself prove issue behavior.
-- Never call `--comment` for a failed setup or baseline. `--comment-failures` is an explicit override for maintainers who want environment-failure evidence posted.
-- Before claiming reproduction or posting a bug report, perform issue-specific investigation and capture issue-specific evidence. A passed baseline is not a reproduced issue.
-- For batch work, keep limits small first: `relunar repro --all-open --limit 3`.
+- `relunar repro start` prepares a persistent sandbox. It does not prove issue behavior.
+- Use `repro upload` and `repro exec` until issue-specific evidence exists.
+- Finish with exactly one outcome: `reproduced`, `not-reproduced`, or `blocked`.
+- Put `--comment` only on `repro finish`, and only when user requested a GitHub comment.
+- Never claim reproduction from setup/baseline output. Relunar rejects comments without a summary and issue-specific command evidence.
+- For multiple issues, freeze explicit issue numbers and run one complete lifecycle per issue. Do not use `--all-open`.
 - Treat Relunar as the deterministic harness. You decide issue priority, extra context needs, and whether the report is useful.
 - If `doctor` says auth or repo setup is missing, use the smallest setup command that fixes that check.
 - Machine setup is global. Repo setup happens inside each target repository.
@@ -27,10 +28,11 @@ relunar auth github [--token <token>]
 relunar auth daytona --api-key <key>
 relunar repo link owner/repo
 relunar issues list --state open --limit 20 --json
-relunar repro 123
-relunar repro 123 --comment
-relunar repro 123 --comment-failures
-relunar repro --all-open --limit 5
+relunar repro start 123
+relunar repro upload <run-id> ./repro.ts repo/repro.ts
+relunar repro exec <run-id> -- bun repro.ts
+relunar repro finish <run-id> --outcome reproduced --summary "Observed compiler crash with supplied source." --comment
+relunar repro abort <run-id>
 relunar runs list --json
 relunar runs show <run-id> --json
 relunar skills list
