@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Logo } from "@/components/logo";
+import { LogoMark } from "@/components/logo-mark";
 import { siteConfig } from "@/lib/site";
 
 const links = [
@@ -12,44 +12,60 @@ const links = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-border px-6 py-16 md:py-20">
-      <div className="mx-auto flex max-w-6xl flex-col gap-12 lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-sm space-y-5">
-          <Logo />
-          <p className="text-sm leading-[1.7] text-foreground-muted">
-            CLI-first issue reproduction for coding agents. Local credentials. Deterministic reports. Optional comments
-            when you ask.
-          </p>
-          <p className="text-xs uppercase tracking-[0.22em] text-foreground-subtle">
-            Open source · MIT · No hosted service
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-sm sm:grid-cols-3">
-          {links.map((link) =>
-            "external" in link && link.external ? (
-              <a
-                key={link.href}
-                href={link.href}
-                target="_blank"
-                rel="noreferrer"
-                className="text-foreground-muted transition-colors hover:text-foreground"
+    <footer className="border-t border-border bg-background-deep">
+      <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8 md:py-20">
+        <div className="flex flex-col gap-12 md:flex-row md:items-start md:justify-between">
+          <div className="max-w-sm space-y-5">
+            <div className="flex items-center gap-2.5 text-foreground">
+              <LogoMark id="footer" className="size-5 text-accent" />
+              <span
+                className="text-[0.875rem] font-semibold uppercase"
+                style={{ fontVariationSettings: '"wdth" 118', letterSpacing: "0.12em" }}
               >
-                {link.label}
-              </a>
-            ) : (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="text-foreground-muted transition-colors hover:text-foreground"
-              >
-                {link.label}
-              </Link>
-            ),
-          )}
+                Relunar
+              </span>
+            </div>
+            <p className="text-pretty text-sm leading-[1.7] text-foreground-muted">
+              The repro harness for coding agents. Local credentials, deterministic sandboxes,
+              evidence on your machine.
+            </p>
+            <p className="mono-label text-foreground-subtle">Open source · MIT · No hosted service</p>
+          </div>
+
+          <nav
+            className="grid grid-cols-2 gap-x-12 gap-y-1 sm:grid-cols-3"
+            aria-label="Footer"
+          >
+            {links.map((link) =>
+              "external" in link && link.external ? (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mono-label inline-flex min-h-11 items-center text-foreground-subtle transition-colors hover:text-foreground"
+                >
+                  {link.label}
+                </a>
+              ) : (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="mono-label inline-flex min-h-11 items-center text-foreground-subtle transition-colors hover:text-foreground"
+                >
+                  {link.label}
+                </Link>
+              ),
+            )}
+          </nav>
         </div>
-      </div>
-      <div className="mx-auto mt-12 max-w-6xl border-t border-border pt-6 text-xs text-foreground-subtle">
-        © {new Date().getFullYear()} Relunar. Built for maintainers who work with coding agents.
+
+        <div className="mt-14 flex flex-col gap-2 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <p className="mono-label text-foreground-subtle">
+            © {new Date().getFullYear()} Relunar
+          </p>
+          <p className="mono-label text-foreground-subtle">Built for the night shift</p>
+        </div>
       </div>
     </footer>
   );

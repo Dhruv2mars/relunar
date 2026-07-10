@@ -9,7 +9,7 @@ type DocsLayoutProps = {
 
 export function DocsLayout({ children, activeSlug }: DocsLayoutProps) {
   return (
-    <div className="mx-auto flex max-w-6xl gap-10 px-6 py-16 md:py-20 lg:gap-12">
+    <div className="mx-auto flex max-w-6xl gap-10 px-6 pb-16 pt-24 md:py-20 lg:gap-12">
       <DocsSidebar activeSlug={activeSlug} />
       <div className="min-w-0 flex-1">
         <DocsMobileNav activeSlug={activeSlug} />
