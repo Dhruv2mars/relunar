@@ -9,6 +9,21 @@ const configSchema = z.object({
   version: z.literal(1).default(1),
   setup: z.array(z.string().min(1)).default(["bun install"]),
   baseline: z.array(z.string().min(1)).default(["bun run typecheck", "bun test"]),
+  sandbox: z
+    .object({
+      image: z.string().min(1).optional(),
+      resources: z
+        .object({
+          cpu: z.number().positive().optional(),
+          memory: z.number().positive().optional(),
+          disk: z.number().positive().optional(),
+        })
+        .optional(),
+    })
+    .refine((sandbox) => !sandbox.resources || sandbox.image !== undefined, {
+      message: "sandbox.resources requires sandbox.image",
+    })
+    .optional(),
   commandTimeoutSeconds: z.number().int().positive().default(300),
   report: z
     .object({

@@ -5,6 +5,7 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     "## Relunar Repro Report",
     "",
     `Status: ${formatStatus(report.status)}`,
+    "Evidence: environment baseline only; this command does not itself prove the issue behavior.",
     "",
     `Issue: #${report.issue.number}`,
     `Repo: ${report.repo}`,

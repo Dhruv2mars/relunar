@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runRepro } from "../src/repro";
-import type { Issue, SandboxProvider, SandboxSession, SandboxExecResult } from "../src/types";
+import type { Issue, SandboxProvider, SandboxResources, SandboxSession, SandboxExecResult } from "../src/types";
 
 describe("repro runner", () => {
   test("runs clone, setup, baseline and writes local report", async () => {
@@ -105,6 +105,43 @@ describe("repro runner", () => {
 
       const raw = await readFile(join(cwd, ".relunar", "runs", report.runId, "report.json"), "utf8");
       expect(JSON.parse(raw).commands[1].stdout).toBe("installed");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("passes configured sandbox image to provider", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-repro-image-"));
+    try {
+      await writeFile(
+        join(cwd, ".relunar.yml"),
+        "version: 1\nsetup: []\nbaseline:\n  - 'true'\nsandbox:\n  image: node:22-bookworm\n  resources:\n    cpu: 4\n    memory: 8\n    disk: 20\n",
+        "utf8",
+      );
+      const sandbox = new FakeSandbox([
+        { match: "git clone", result: ok("") },
+        { match: "git rev-parse", result: ok("abc123\\n") },
+        { match: "true", result: ok("") },
+      ]);
+      let requestedImage: string | undefined;
+      let requestedResources: SandboxResources | undefined;
+
+      await runRepro({
+        cwd,
+        repo: "owner/repo",
+        issue: sampleIssue(),
+        githubToken: "secret-token",
+        sandboxProvider: {
+          createSandbox: async (input) => {
+            requestedImage = input.image;
+            requestedResources = input.resources;
+            return sandbox;
+          },
+        },
+      });
+
+      expect(requestedImage).toBe("node:22-bookworm");
+      expect(requestedResources).toEqual({ cpu: 4, memory: 8, disk: 20 });
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

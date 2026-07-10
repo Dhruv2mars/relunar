@@ -65,13 +65,20 @@ baseline:
   - bun run typecheck
   - bun test
 
+sandbox:
+  image: node:22-bookworm
+  resources:
+    cpu: 4
+    memory: 8
+    disk: 10
+
 commandTimeoutSeconds: 300
 
 report:
   maxLogLines: 200
 ```
 
-`setup` installs dependencies. `baseline` is the deterministic command list Relunar runs in Daytona. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
+`setup` installs dependencies. `baseline` is the deterministic command list Relunar runs in Daytona. `repro` verifies environment readiness; it does not itself prove issue-specific behavior. Set `sandbox.image` when the repo needs a runtime different from Daytona's default image. `sandbox.resources` requires an image and sets CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
 
 ```txt
 .relunar/runs/<run-id>/

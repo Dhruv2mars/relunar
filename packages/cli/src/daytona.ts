@@ -1,5 +1,5 @@
 import { CodeLanguage, Daytona, type DaytonaConfig } from "@daytona/sdk";
-import type { SandboxProvider, SandboxSession } from "./types";
+import type { SandboxProvider, SandboxResources, SandboxSession } from "./types";
 
 export type DaytonaProviderOptions = {
   apiKey: string;
@@ -24,10 +24,12 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     this.daytona = new Daytona(config);
   }
 
-  async createSandbox(input: { runId: string }): Promise<SandboxSession> {
+  async createSandbox(input: { runId: string; image?: string | undefined; resources?: SandboxResources | undefined }): Promise<SandboxSession> {
     const sandbox = await this.daytona.create(
       {
-        language: CodeLanguage.TYPESCRIPT,
+        ...(input.image
+          ? { image: input.image, ...(input.resources ? { resources: input.resources } : {}) }
+          : { language: CodeLanguage.TYPESCRIPT }),
         ephemeral: true,
         autoStopInterval: 30,
         autoDeleteInterval: 0,
