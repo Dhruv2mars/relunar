@@ -41,15 +41,10 @@ relunar setup
 relunar repo link owner/repo
 relunar doctor
 relunar issues list --state open --limit 20 --json
-relunar repro 123
-relunar repro 123 --comment
-```
-
-Batch mode stays explicit:
-
-```sh
-relunar repro --all-open --limit 5
-relunar repro --all-open --limit 5 --comment
+relunar repro start 123
+relunar repro upload <run-id> ./repro.ts repo/repro.ts
+relunar repro exec <run-id> -- bun repro.ts
+relunar repro finish <run-id> --outcome reproduced --summary "Observed compiler crash." --comment
 ```
 
 ## Repository Config
@@ -81,7 +76,7 @@ report:
   maxLogLines: 200
 ```
 
-Relunar clones the linked GitHub repo into a Daytona sandbox, reads your local `.relunar.yml`, runs `setup`, then runs `baseline`. `repro` verifies clean-environment readiness; it does not on its own prove issue-specific behavior. Use `sandbox.image` when the repository requires a different runtime than Daytona's default language image. `sandbox.resources` requires a custom image and controls CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. It writes reports locally:
+`repro start` clones the linked GitHub repo into a persistent Daytona sandbox, reads `.relunar.yml`, runs `setup`, then runs `baseline`. Agents use `repro upload` and `repro exec` for issue-specific investigation. `repro finish` requires command evidence and a summary, records the outcome, optionally comments, then deletes the sandbox. Use `sandbox.image` when the repository requires a different runtime than Daytona's default language image. `sandbox.resources` requires a custom image and controls CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
 
 ```txt
 .relunar/runs/<run-id>/
@@ -123,9 +118,11 @@ relunar auth github
 relunar auth daytona
 relunar repo link owner/repo
 relunar issues list --state open --limit 20 --json
-relunar repro 123
-relunar repro 123 --comment
-relunar repro --all-open --limit 5
+relunar repro start 123
+relunar repro exec <run-id> -- <command>
+relunar repro upload <run-id> <local-path> <remote-path>
+relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--comment]
+relunar repro abort <run-id>
 relunar runs list
 relunar runs show <run-id>
 relunar skills list

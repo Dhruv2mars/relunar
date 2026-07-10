@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseRelunarConfig, defaultRelunarConfig } from "./config";
 import { redactSecret } from "./reports";
-import { createRunId, writeRun } from "./runs";
-import type { CommandEvidence, Issue, RelunarConfig, RepoSlug, RunReport, SandboxProvider, SandboxSession } from "./types";
+import { createRunId, readRun, writeRun } from "./runs";
+import type { CommandEvidence, Issue, RelunarConfig, RepoSlug, ReproOutcome, RunReport, SandboxProvider, SandboxSession } from "./types";
 
 export type ReproInput = {
   cwd: string;
@@ -15,6 +15,14 @@ export type ReproInput = {
 };
 
 export async function runRepro(input: ReproInput): Promise<RunReport> {
+  return runInitialRepro(input, true);
+}
+
+export async function startRepro(input: ReproInput): Promise<RunReport> {
+  return runInitialRepro(input, false);
+}
+
+async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Promise<RunReport> {
   const runId = createRunId(input.issue.number);
   const startedAt = new Date().toISOString();
   const commands: CommandEvidence[] = [];
@@ -22,6 +30,7 @@ export async function runRepro(input: ReproInput): Promise<RunReport> {
   let commit: string | null = null;
   let config: RelunarConfig = defaultRelunarConfig;
   let commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
+  let keepSandbox = false;
 
   try {
     const localConfig = await readLocalConfig(input.cwd);
@@ -95,15 +104,104 @@ export async function runRepro(input: ReproInput): Promise<RunReport> {
       }
     }
 
-    return await finish(input, startedAt, runId, "passed", commands, commit, sandbox, null, config);
+    const report = await finish(input, startedAt, runId, disposeOnReady ? "passed" : "environment_ready", commands, commit, sandbox, null, config);
+    if (!disposeOnReady) {
+      keepSandbox = true;
+    }
+    return report;
   } catch (error) {
     const failure = error instanceof Error ? error.message : String(error);
     return await finish(input, startedAt, runId, "blocked", commands, commit, sandbox, failure, config);
   } finally {
-    if (sandbox) {
+    if (sandbox && !keepSandbox) {
       await sandbox.dispose();
     }
   }
+}
+
+export async function execRepro(input: { cwd: string; runId: string; command: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+  const report = await requireReadyRun(input.cwd, input.runId);
+  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+  report.commands.push(
+    await execEvidence({
+      sandbox,
+      name: "repro",
+      command: input.command,
+      cwd: "repo",
+      timeoutSeconds: config.commandTimeoutSeconds,
+      secret: null,
+    }),
+  );
+  report.finishedAt = new Date().toISOString();
+  await writeRun(input.cwd, report, config.report.maxLogLines);
+  return report;
+}
+
+export async function uploadReproFile(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+  const report = await requireReadyRun(input.cwd, input.runId);
+  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+  const started = Date.now();
+  await sandbox.upload(input.localPath, input.remotePath);
+  report.commands.push({
+    name: "repro_upload",
+    command: `upload ${input.localPath} ${input.remotePath}`,
+    status: "passed",
+    exitCode: 0,
+    durationMs: Date.now() - started,
+    stdout: "",
+    stderr: "",
+  });
+  report.finishedAt = new Date().toISOString();
+  await writeRun(input.cwd, report, config.report.maxLogLines);
+  return report;
+}
+
+export async function finishRepro(input: { cwd: string; runId: string; outcome: ReproOutcome; summary: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+  const report = await requireReadyRun(input.cwd, input.runId);
+  if (!report.commands.some((command) => command.name === "repro")) {
+    throw new Error("Cannot finish repro without issue-specific command evidence.");
+  }
+  const summary = input.summary.trim();
+  if (!summary) {
+    throw new Error("Cannot finish repro without a summary.");
+  }
+  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+  await sandbox.dispose();
+  report.status = input.outcome;
+  report.summary = summary;
+  report.failure = input.outcome === "blocked" ? summary : null;
+  report.finishedAt = new Date().toISOString();
+  await writeRun(input.cwd, report, config.report.maxLogLines);
+  return report;
+}
+
+export async function abortRepro(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+  const report = await requireReadyRun(input.cwd, input.runId);
+  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+  await sandbox.dispose();
+  report.status = "aborted";
+  report.finishedAt = new Date().toISOString();
+  await writeRun(input.cwd, report, config.report.maxLogLines);
+  return report;
+}
+
+async function requireReadyRun(cwd: string, runId: string): Promise<RunReport> {
+  const report = await readRun(cwd, runId);
+  if (report.status !== "environment_ready") {
+    throw new Error(`Run ${runId} is ${report.status}; expected environment_ready.`);
+  }
+  return report;
+}
+
+function requireSandboxId(report: RunReport): string {
+  if (!report.sandbox.id) {
+    throw new Error(`Run ${report.runId} has no sandbox id.`);
+  }
+  return report.sandbox.id;
 }
 
 async function execEvidence(input: {
@@ -159,6 +257,7 @@ async function finish(
     },
     commands,
     failure,
+    summary: null,
     startedAt,
     finishedAt: new Date().toISOString(),
   };

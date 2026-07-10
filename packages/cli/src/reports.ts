@@ -5,7 +5,9 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     "## Relunar Repro Report",
     "",
     `Status: ${formatStatus(report.status)}`,
-    "Evidence: environment baseline only; this command does not itself prove the issue behavior.",
+    isFinalizedRepro(report)
+      ? "Evidence: issue-specific commands captured in this report."
+      : "Evidence: environment baseline only; this command does not itself prove the issue behavior.",
     "",
     `Issue: #${report.issue.number}`,
     `Repo: ${report.repo}`,
@@ -14,6 +16,10 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     "",
     "Commands:",
   ];
+
+  if (report.summary) {
+    lines.splice(8, 0, `Summary: ${report.summary}`, "");
+  }
 
   for (const command of report.commands) {
     lines.push(`- ${command.command}: ${formatCommandStatus(command)}`);
@@ -27,6 +33,14 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
   return `${lines.join("\n")}\n`;
 }
 
+export function isFinalizedRepro(report: RunReport): boolean {
+  return (
+    (report.status === "reproduced" || report.status === "not_reproduced" || report.status === "blocked") &&
+    Boolean(report.summary?.trim()) &&
+    report.commands.some((command) => command.name === "repro")
+  );
+}
+
 export function redactSecret(value: string, secret: string | null): string {
   if (!secret) {
     return value;
@@ -38,6 +52,14 @@ function formatStatus(status: RunReport["status"]): string {
   switch (status) {
     case "passed":
       return "Baseline passed";
+    case "environment_ready":
+      return "Environment ready";
+    case "reproduced":
+      return "Reproduced";
+    case "not_reproduced":
+      return "Not reproduced";
+    case "aborted":
+      return "Aborted";
     case "setup_failed":
       return "Setup failed";
     case "baseline_failed":

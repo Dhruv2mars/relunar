@@ -52,7 +52,9 @@ export type CommandEvidence = {
   stderr: string;
 };
 
-export type RunStatus = "passed" | "setup_failed" | "baseline_failed" | "blocked";
+export type ReproOutcome = "reproduced" | "not_reproduced" | "blocked";
+
+export type RunStatus = "passed" | "environment_ready" | ReproOutcome | "aborted" | "setup_failed" | "baseline_failed";
 
 export type RunReport = {
   runId: string;
@@ -71,6 +73,7 @@ export type RunReport = {
   };
   commands: CommandEvidence[];
   failure: string | null;
+  summary?: string | null | undefined;
   startedAt: string;
   finishedAt: string;
 };
@@ -86,9 +89,11 @@ export type SandboxSession = {
   id: string;
   target: string | null;
   run(command: string, cwd: string, timeoutSeconds: number, env?: Record<string, string>): Promise<SandboxExecResult>;
+  upload(localPath: string, remotePath: string): Promise<void>;
   dispose(): Promise<void>;
 };
 
 export type SandboxProvider = {
   createSandbox(input: { runId: string; image?: string | undefined; resources?: SandboxResources | undefined }): Promise<SandboxSession>;
+  resumeSandbox(id: string): Promise<SandboxSession>;
 };

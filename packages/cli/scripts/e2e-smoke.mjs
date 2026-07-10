@@ -55,15 +55,23 @@ try {
     fail("issues list did not return an array.");
   }
 
-  const report = JSON.parse(run(["repro", issue]));
-  if (report.status !== "passed") {
-    fail(renderReproFailure(report));
+  const started = JSON.parse(run(["repro", "start", issue]));
+  if (started.status !== "environment_ready") {
+    fail(renderReproFailure(started));
   }
-  if (!report.sandbox?.id) {
+  if (!started.sandbox?.id) {
     fail("repro did not record a Daytona sandbox id.");
   }
-  if (!Array.isArray(report.commands) || !report.commands.some((command) => command.name === "clone")) {
+  if (!Array.isArray(started.commands) || !started.commands.some((command) => command.name === "clone")) {
     fail("repro did not run the clone command.");
+  }
+  const executed = JSON.parse(run(["repro", "exec", started.runId, "--", "test", "-f", "package.json"]));
+  if (!executed.commands.some((command) => command.name === "repro" && command.status === "passed")) {
+    fail("repro did not record issue-specific command evidence.");
+  }
+  const report = JSON.parse(run(["repro", "finish", started.runId, "--outcome", "not-reproduced", "--summary", "Lifecycle smoke command passed."]));
+  if (report.status !== "not_reproduced") {
+    fail(renderReproFailure(report));
   }
 
   console.log(`E2E passed: ${report.runId} ${report.status} ${repo}#${issue}`);

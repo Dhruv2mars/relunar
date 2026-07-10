@@ -41,6 +41,18 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       { timeout: 120 },
     );
 
+    return this.session(sandbox);
+  }
+
+  async resumeSandbox(id: string): Promise<SandboxSession> {
+    const sandbox = await this.daytona.get(id);
+    if (sandbox.state !== "started") {
+      await sandbox.start(120);
+    }
+    return this.session(sandbox);
+  }
+
+  private session(sandbox: Awaited<ReturnType<Daytona["get"]>>): SandboxSession {
     return {
       id: sandbox.id,
       target: sandbox.target ?? this.options.target ?? null,
@@ -64,6 +76,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
           }
           throw error;
         }
+      },
+      upload: async (localPath, remotePath) => {
+        await sandbox.fs.uploadFile(localPath, remotePath);
       },
       dispose: async () => {
         await sandbox.delete(120).catch(async () => {

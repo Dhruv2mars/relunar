@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { renderMarkdownReport } from "../src/reports";
+import { isFinalizedRepro, renderMarkdownReport } from "../src/reports";
 import type { RunReport } from "../src/types";
 
 describe("reports", () => {
@@ -41,5 +41,26 @@ describe("reports", () => {
     expect(markdown).toContain("- bun test: failed (1)");
     expect(markdown).toContain("line 2\nline 3");
     expect(markdown).not.toContain("line 1\nline 2\nline 3");
+  });
+
+  test("allows comments only for finalized issue-specific evidence", () => {
+    const report: RunReport = {
+      runId: "issue-2-demo",
+      status: "reproduced",
+      issue: { number: 2, title: "Crash", url: "https://github.com/owner/repo/issues/2" },
+      repo: "owner/repo",
+      commit: "abc123",
+      sandbox: { provider: "daytona", id: "sandbox-2", target: "us" },
+      commands: [{ name: "repro", command: "bun repro.ts", status: "failed", exitCode: 1, durationMs: 10, stdout: "crash", stderr: "" }],
+      failure: null,
+      summary: "Compiler crashes with supplied source.",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "2026-01-01T00:00:01.000Z",
+    };
+
+    expect(isFinalizedRepro(report)).toBe(true);
+    expect(renderMarkdownReport(report, 20)).toContain("Evidence: issue-specific commands captured");
+    expect(isFinalizedRepro({ ...report, status: "environment_ready" })).toBe(false);
+    expect(isFinalizedRepro({ ...report, commands: [] })).toBe(false);
   });
 });
