@@ -6,7 +6,7 @@
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "build"],
       "inputs": ["src/**", "test/**", "tsconfig.json", "package.json"]
     },
     "test": {
