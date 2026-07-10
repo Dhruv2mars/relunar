@@ -42,10 +42,8 @@ export default async function DocPage({ params }: PageProps) {
   return (
     <DocsLayout activeSlug={slug}>
       <article>
-        <p className="eyebrow">Documentation</p>
-        <h1 className="display-serif mt-4 text-balance text-4xl tracking-[-0.035em] text-foreground md:text-5xl">
-          {page.title}
-        </h1>
+        <p className="mono-label text-foreground-subtle">Documentation</p>
+        <h1 className="display display-section mt-4">{page.title}</h1>
         <p className="mt-4 max-w-2xl text-lg leading-[1.65] text-foreground-muted">{page.description}</p>
         <div className="mt-10 border-t border-border pt-10">
           <DocsContent content={page.content} />

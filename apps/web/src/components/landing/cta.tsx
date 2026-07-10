@@ -1,44 +1,49 @@
+import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/button";
+import { CopyButton } from "@/components/copy-button";
 import { LogoMark } from "@/components/logo-mark";
-import { Reveal } from "@/components/reveal";
 import { siteConfig } from "@/lib/site";
 
 export function CtaSection() {
   return (
-    <section className="px-6 pb-28 md:pb-36">
-      <div className="mx-auto max-w-6xl">
-        <Reveal>
-          <div className="inverse-panel relative overflow-hidden rounded-[2rem] border border-transparent px-8 py-16 md:px-14 md:py-20">
-            <div
-              className="pointer-events-none absolute inset-0 opacity-100"
-              style={{
-                background: "radial-gradient(circle at top right, var(--cta-glow), transparent 42%)",
-              }}
-            />
-            <LogoMark
-              variant="white"
-              className="pointer-events-none absolute -right-10 -top-12 size-48 opacity-[0.08] md:-right-12 md:-top-16 md:size-72"
-            />
-            <div className="relative max-w-2xl">
-              <p className="text-xs font-medium uppercase tracking-[0.24em] text-inverse-subtle">Ready when you are</p>
-              <h2 className="display-serif mt-5 text-balance text-4xl leading-[1.02] tracking-[-0.035em] md:text-[3.25rem]">
-                Give your agent a better way to reproduce issues.
-              </h2>
-              <p className="mt-5 text-base leading-[1.65] text-inverse-muted md:text-lg">
-                Install Relunar locally, link your repository, and let your coding agent handle the rest — with
-                evidence you can trust.
-              </p>
-              <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <Button href="/docs/getting-started" variant="inverse">
-                  Read the docs
-                </Button>
-                <Button href={siteConfig.npm} variant="inverseGhost" external>
-                  Install from npm
-                </Button>
-              </div>
-            </div>
-          </div>
-        </Reveal>
+    <section className="relative overflow-hidden border-t border-border bg-background-deep">
+      <div
+        className="pointer-events-none absolute inset-x-0 -bottom-24 h-64"
+        style={{
+          background:
+            "radial-gradient(ellipse 55% 100% at 50% 100%, oklch(0.768 0.135 62 / 0.14), transparent 70%)",
+        }}
+        aria-hidden
+      />
+
+      <div className="relative mx-auto flex max-w-6xl flex-col items-center px-5 py-28 text-center sm:px-8 md:py-36">
+        <LogoMark id="cta" className="size-11 text-accent" />
+
+        <h2 className="display display-hero mt-8">
+          <span className="block">The backlog won’t</span>
+          <span className="block text-accent">repro itself.</span>
+        </h2>
+
+        <p className="text-pretty mt-7 max-w-md text-lg leading-[1.65] text-foreground-muted">
+          Open source, MIT, no hosted service. Install it, link a repo, and hand your agent
+          the harness.
+        </p>
+
+        <div className="mt-10 flex w-full max-w-md items-center justify-between gap-3 rounded-md border border-border bg-code-bg py-1.5 pl-4 pr-1.5 text-left">
+          <code className="mono-data truncate text-foreground-muted">
+            <span className="select-none text-accent">$ </span>
+            {siteConfig.installCommand}
+          </code>
+          <CopyButton value={siteConfig.installCommand} label="Copy" className="border-transparent" />
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Button href="/docs/getting-started">Read the docs</Button>
+          <Button href={siteConfig.github} variant="outline" external>
+            Star on GitHub
+            <ArrowUpRight className="size-3.5" strokeWidth={2} />
+          </Button>
+        </div>
       </div>
     </section>
   );

@@ -13,10 +13,8 @@ export const metadata: Metadata = {
 export default function DocsIndexPage() {
   return (
     <DocsLayout>
-      <p className="eyebrow">Documentation</p>
-      <h1 className="display-serif mt-4 text-balance text-4xl tracking-[-0.035em] text-foreground md:text-5xl">
-        Guides for agents and maintainers.
-      </h1>
+      <p className="mono-label text-foreground-subtle">Documentation</p>
+      <h1 className="display display-section mt-4">Guides for agents and maintainers.</h1>
       <p className="mt-5 max-w-2xl text-lg leading-[1.65] text-foreground-muted">
         Everything you need to install Relunar, configure a repository, and let your coding agent reproduce GitHub
         issues with structured evidence.
@@ -31,14 +29,12 @@ export default function DocsIndexPage() {
               <Link
                 key={item.slug}
                 href={`/docs/${item.slug}`}
-                className="card-interactive group rounded-[1.35rem] border border-border bg-background-elevated p-6 md:p-7"
+                className="group rounded-lg border border-border bg-background-elevated p-6 transition-colors duration-150 hover:border-border-strong md:p-7"
               >
-                <p className="text-[0.68rem] font-medium uppercase tracking-[0.18em] text-foreground-subtle">
-                  {section.title}
-                </p>
-                <h2 className="mt-3 text-xl font-medium tracking-[-0.025em] text-foreground">{page.title}</h2>
+                <p className="mono-label text-foreground-subtle">{section.title}</p>
+                <h2 className="mt-3 text-xl font-semibold tracking-[-0.015em] text-foreground">{page.title}</h2>
                 <p className="mt-2 text-sm leading-[1.65] text-foreground-muted">{page.description}</p>
-                <span className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-accent">
+                <span className="mt-5 inline-flex items-center gap-1 text-sm font-medium text-accent-bright">
                   Read guide
                   <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
                 </span>
@@ -48,14 +44,24 @@ export default function DocsIndexPage() {
         )}
       </div>
 
-      <div className="mt-14 rounded-[1.35rem] border border-border bg-surface px-6 py-5">
+      <div className="mt-14 rounded-lg border border-border bg-surface px-6 py-5">
         <p className="text-sm leading-[1.65] text-foreground-muted">
           Looking for the CLI package? Install{" "}
-          <a href={siteConfig.npm} className="font-medium text-accent underline underline-offset-4">
+          <a
+            href={siteConfig.npm}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-accent-bright underline underline-offset-4"
+          >
             @dhruv2mars/relunar
           </a>{" "}
           from npm or browse the source on{" "}
-          <a href={siteConfig.github} className="font-medium text-accent underline underline-offset-4">
+          <a
+            href={siteConfig.github}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-accent-bright underline underline-offset-4"
+          >
             GitHub
           </a>
           .
