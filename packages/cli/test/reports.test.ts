@@ -37,6 +37,7 @@ describe("reports", () => {
 
     const markdown = renderMarkdownReport(report, 2);
     expect(markdown).toContain("Status: Baseline failed");
+    expect(markdown).toContain("Evidence: environment baseline only");
     expect(markdown).toContain("- bun test: failed (1)");
     expect(markdown).toContain("line 2\nline 3");
     expect(markdown).not.toContain("line 1\nline 2\nline 3");

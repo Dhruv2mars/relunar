@@ -19,6 +19,12 @@ describe("relunar config", () => {
     expect(() => parseRelunarConfig("version: 1\ncommandTimeoutSeconds: 0\n")).toThrow();
   });
 
+  test("parses optional custom sandbox image", () => {
+    expect(parseRelunarConfig("version: 1\nsandbox:\n  image: node:22-bookworm\n").sandbox?.image).toBe("node:22-bookworm");
+    expect(() => parseRelunarConfig("version: 1\nsandbox:\n  image: ''\n")).toThrow();
+    expect(() => parseRelunarConfig("version: 1\nsandbox:\n  resources:\n    memory: 4\n")).toThrow();
+  });
+
   test("writes init config without overwriting existing file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-config-"));
     try {

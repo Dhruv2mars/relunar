@@ -301,6 +301,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, de
     target: deps.env.RELUNAR_DAYTONA_TARGET ?? globalConfig.daytona?.target,
   });
   const comment = flagBoolean(flags, "comment");
+  const commentFailures = flagBoolean(flags, "comment-failures");
   const reports: RunReport[] = [];
 
   if (allOpen) {
@@ -309,21 +310,36 @@ async function repro(args: string[], flags: Record<string, string | boolean>, de
     for (const issue of issues) {
       const report = await runRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
       reports.push(report);
-      if (comment) {
-        await client.createComment(repo, issue.number, renderMarkdownReport(report, 200));
-      }
+      await maybeComment(client, repo, issue.number, report, comment, commentFailures, deps);
     }
   } else {
     const issue = await client.getIssue(repo, issueNumber ?? unreachableInvalidIssueNumber());
     const report = await runRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
     reports.push(report);
-    if (comment) {
-      await client.createComment(repo, issue.number, renderMarkdownReport(report, 200));
-    }
+    await maybeComment(client, repo, issue.number, report, comment, commentFailures, deps);
   }
 
   deps.io.stdout(`${JSON.stringify(reports.length === 1 ? reports[0] : reports, null, 2)}\n`);
   return reports.some((report) => report.status === "blocked") ? 1 : 0;
+}
+
+async function maybeComment(
+  client: GitHubClient,
+  repo: RepoSlug,
+  issueNumber: number,
+  report: RunReport,
+  comment: boolean,
+  commentFailures: boolean,
+  deps: CliDeps,
+): Promise<void> {
+  if (!comment) {
+    return;
+  }
+  if (report.status !== "passed" && !commentFailures) {
+    deps.io.stderr(`Skipped GitHub comment for #${issueNumber}: ${report.status}. Use --comment-failures to override.\n`);
+    return;
+  }
+  await client.createComment(repo, issueNumber, renderMarkdownReport(report, 200));
 }
 
 async function runsList(flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
@@ -464,8 +480,8 @@ Commands:
   relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
   relunar repo link owner/repo
   relunar issues list [--state open|closed|all] [--limit N] [--json]
-  relunar repro <issue-number> [--comment]
-  relunar repro --all-open [--limit 5] [--comment]
+  relunar repro <issue-number> [--comment] [--comment-failures]
+  relunar repro --all-open [--limit 5] [--comment] [--comment-failures]
   relunar runs list [--json]
   relunar runs show <run-id> [--json]
   relunar skills list|get|install [agent]

@@ -1,9 +1,23 @@
 export type RepoSlug = `${string}/${string}`;
 
+export type SandboxResources = {
+  cpu?: number | undefined;
+  memory?: number | undefined;
+  disk?: number | undefined;
+};
+
 export type RelunarConfig = {
   version: 1;
   setup: string[];
   baseline: string[];
+  sandbox?: {
+    /**
+     * Optional Daytona-compatible image. Use this when a repository pins a
+     * runtime that differs from Daytona's language image.
+     */
+    image?: string | undefined;
+    resources?: SandboxResources | undefined;
+  } | undefined;
   commandTimeoutSeconds: number;
   report: {
     maxLogLines: number;
@@ -76,5 +90,5 @@ export type SandboxSession = {
 };
 
 export type SandboxProvider = {
-  createSandbox(input: { runId: string }): Promise<SandboxSession>;
+  createSandbox(input: { runId: string; image?: string | undefined; resources?: SandboxResources | undefined }): Promise<SandboxSession>;
 };

@@ -66,13 +66,22 @@ baseline:
   - bun run typecheck
   - bun test
 
+# Optional. Use a repo-compatible image when the Daytona language image has
+# an incompatible runtime. For example, TypeScript's testbed pins Node 22.
+sandbox:
+  image: node:22-bookworm
+  resources:
+    cpu: 4
+    memory: 8
+    disk: 10
+
 commandTimeoutSeconds: 300
 
 report:
   maxLogLines: 200
 ```
 
-Relunar clones the linked GitHub repo into a Daytona sandbox, reads your local `.relunar.yml`, runs `setup`, then runs `baseline`. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. It writes reports locally:
+Relunar clones the linked GitHub repo into a Daytona sandbox, reads your local `.relunar.yml`, runs `setup`, then runs `baseline`. `repro` verifies clean-environment readiness; it does not on its own prove issue-specific behavior. Use `sandbox.image` when the repository requires a different runtime than Daytona's default language image. `sandbox.resources` requires a custom image and controls CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. It writes reports locally:
 
 ```txt
 .relunar/runs/<run-id>/

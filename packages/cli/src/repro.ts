@@ -30,7 +30,11 @@ export async function runRepro(input: ReproInput): Promise<RunReport> {
       config = localConfig;
       commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
     }
-    sandbox = await input.sandboxProvider.createSandbox({ runId });
+    sandbox = await input.sandboxProvider.createSandbox({
+      runId,
+      image: config.sandbox?.image,
+      resources: config.sandbox?.resources,
+    });
 
     commands.push(
       await execEvidence({

@@ -103,7 +103,11 @@ describe("cli", () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-setup-"));
     try {
       const secrets: Array<{ name: SecretName; value: string }> = [];
-      const output = await invoke(["setup"], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_GITHUB_TOKEN: "gh-token" }, {
+      const output = await invoke(["setup"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_GITHUB_TOKEN: "gh-token",
+        RELUNAR_SECRET_STORE: "local",
+      }, {
         prompt: scriptedPrompt(["daytona-key", "https://daytona.example/api", "us", "owner/repo"]),
         secretWriter: async (name, value) => {
           secrets.push({ name, value });
@@ -195,7 +199,11 @@ describe("cli", () => {
   test("first run starts interactive setup when setup is incomplete", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-first-run-"));
     try {
-      const output = await invoke([], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_SKIP_GH_AUTH_TOKEN: "1" }, {
+      const output = await invoke([], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_SKIP_GH_AUTH_TOKEN: "1",
+        RELUNAR_SECRET_STORE: "local",
+      }, {
         prompt: scriptedPrompt(["", "", "https://app.daytona.io/api", "", ""]),
         secretWriter: async () => undefined,
       });
