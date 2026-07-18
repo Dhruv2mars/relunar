@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { isExcluded, listDeletedTrackedFiles, listWorktreeFiles, mergeExclude, syncWorktree } from "../src/sync";
+import { isExcluded, listDeletedTrackedFiles, listGitlinkPaths, listWorktreeFiles, mergeExclude, syncWorktree } from "../src/sync";
 import type { SandboxExecResult, SandboxSession } from "../src/types";
 
 describe("worktree sync", () => {
@@ -59,6 +59,32 @@ describe("worktree sync", () => {
       expect(result.syncedPaths).toContain("link");
       expect(result.fileCount).toBe(1);
       expect(sandbox.uploads).toHaveLength(1);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("does not delete submodule gitlink directories from the sandbox", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-submodule-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
+      execFileSync("git", ["add", "keep.ts"], { cwd });
+      commit(cwd, "init");
+      // Simulate a gitlink entry without a full submodule clone.
+      execFileSync("git", ["update-index", "--add", "--cacheinfo", "160000", "0123456789abcdef0123456789abcdef01234567", "vendor/lib"], { cwd });
+      expect((await listGitlinkPaths(cwd)).has("vendor/lib")).toBe(true);
+
+      const sandbox = new RecordingSandbox();
+      sandbox.remoteTracked = "keep.ts\0vendor/lib\0";
+      await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/vendor/lib"))).toBe(false);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

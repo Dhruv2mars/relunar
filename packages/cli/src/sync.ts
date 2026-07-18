@@ -30,13 +30,17 @@ export const DEFAULT_SYNC_EXCLUDE = ["node_modules", ".git", ".relunar", "target
 /** Sync dirty local worktree into sandbox `repo/`: overlay present files and remove deletions. */
 export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
   const exclude = mergeExclude(options.exclude);
+  const gitlinks = await listGitlinkPaths(options.cwd);
   const files = await listWorktreeFiles(options.cwd, options.includeUntracked, exclude);
-  const deleted = await listDeletedTrackedFiles(options.cwd, exclude);
-  const stale = (options.previouslySyncedPaths ?? []).filter((path) => !files.includes(path) && !deleted.includes(path));
+  // Gitlinks without a checkout appear in `ls-files --deleted` — never treat as removals.
+  const deleted = (await listDeletedTrackedFiles(options.cwd, exclude)).filter((path) => !gitlinks.has(path));
+  const stale = (options.previouslySyncedPaths ?? []).filter(
+    (path) => !files.includes(path) && !deleted.includes(path) && !gitlinks.has(path),
+  );
   const remoteTracked = await listRemoteTrackedFiles(options.sandbox, options.timeoutSeconds);
   const remoteOnly: string[] = [];
   for (const path of remoteTracked) {
-    if (files.includes(path) || isExcluded(path, exclude)) {
+    if (files.includes(path) || isExcluded(path, exclude) || gitlinks.has(path)) {
       continue;
     }
     // Keep sandbox copies of local files/symlinks (e.g. `git rm --cached`).
@@ -54,7 +58,8 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
 
   // Clear remote-only / deleted / stale paths and present paths before extract so
   // file↔directory swaps succeed even when leftover files keep a remote directory alive.
-  const remoteClear = [...new Set([...removed, ...files])].sort();
+  // Never rm -rf submodule gitlink directories.
+  const remoteClear = [...new Set([...removed, ...files])].filter((path) => !gitlinks.has(path)).sort();
   if (remoteClear.length > 0) {
     await removeRemotePaths(options.sandbox, remoteClear, options.timeoutSeconds);
   }
@@ -96,6 +101,25 @@ async function uploadAndExtract(options: SyncOptions, files: string[]): Promise<
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+/** Submodule gitlink paths (mode 160000) — directories that must not be rm -rf'd. */
+export async function listGitlinkPaths(cwd: string): Promise<Set<string>> {
+  const { stdout } = await execFileAsync("git", ["-C", cwd, "ls-files", "-z", "--stage"], {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  const links = new Set<string>();
+  for (const entry of stdout.split("\0")) {
+    if (!entry.startsWith("160000 ")) {
+      continue;
+    }
+    const tab = entry.indexOf("\t");
+    if (tab >= 0) {
+      links.add(entry.slice(tab + 1));
+    }
+  }
+  return links;
 }
 
 async function listRemoteTrackedFiles(sandbox: SandboxSession, timeoutSeconds: number): Promise<string[]> {
