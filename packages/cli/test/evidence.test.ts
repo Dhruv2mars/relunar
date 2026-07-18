@@ -4,7 +4,7 @@ import { defaultRelunarConfig } from "../src/config";
 import type { RelunarConfig, RunReport } from "../src/types";
 
 describe("evidence gates", () => {
-  test("reproduced requires probe output by default", async () => {
+  test("reproduced requires probe signal by default", async () => {
     const report = baseReport([
       {
         name: "repro",
@@ -16,7 +16,7 @@ describe("evidence gates", () => {
         stderr: "",
       },
     ]);
-    await expect(assertEvidenceGates(report, "reproduced", defaultRelunarConfig)).rejects.toThrow("stdout or stderr");
+    await expect(assertEvidenceGates(report, "reproduced", defaultRelunarConfig)).rejects.toThrow("fail, time out, or produce output");
   });
 
   test("reproduced accepts failing probe with output", async () => {
@@ -47,6 +47,29 @@ describe("evidence gates", () => {
       },
     ]);
     await assertEvidenceGates(report, "reproduced", defaultRelunarConfig);
+  });
+
+  test("requireProbeOutput demands text and ignores exit status alone", async () => {
+    const config: RelunarConfig = {
+      ...defaultRelunarConfig,
+      evidence: {
+        reproduced: {
+          requireProbeOutput: true,
+        },
+      },
+    };
+    const report = baseReport([
+      {
+        name: "repro",
+        command: "false",
+        status: "failed",
+        exitCode: 1,
+        durationMs: 1,
+        stdout: "",
+        stderr: "",
+      },
+    ]);
+    await expect(assertEvidenceGates(report, "reproduced", config)).rejects.toThrow("stdout or stderr");
   });
 
   test("requireNonZeroExit rejects all-passing probes", async () => {

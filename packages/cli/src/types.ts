@@ -15,6 +15,11 @@ export type EvidenceGate = {
   requireZeroExit?: boolean | undefined;
   /** Require at least one repro command with non-empty stdout or stderr. */
   requireProbeOutput?: boolean | undefined;
+  /**
+   * Require failure/timeout or non-empty probe output.
+   * Default for `reproduced` when neither requireProbeOutput nor requireNonZeroExit is set.
+   */
+  requireProbeSignal?: boolean | undefined;
   /** Regex that must match combined repro stdout/stderr. */
   requireOutputMatch?: string | undefined;
   /** Sandbox paths that must exist at finish time. */

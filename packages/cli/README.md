@@ -96,7 +96,8 @@ sync:
 
 evidence:
   reproduced:
-    requireProbeOutput: true
+    # Default when unset: requireProbeSignal (fail/timeout or non-empty output)
+    # requireProbeOutput: true
     # requireNonZeroExit: true
     # requireOutputMatch: "(?i)error|panic|fail"
     # requireArtifacts:

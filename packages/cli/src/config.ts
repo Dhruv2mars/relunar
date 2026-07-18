@@ -11,6 +11,7 @@ const evidenceGateSchema = z
     requireNonZeroExit: z.boolean().optional(),
     requireZeroExit: z.boolean().optional(),
     requireProbeOutput: z.boolean().optional(),
+    requireProbeSignal: z.boolean().optional(),
     requireOutputMatch: z.string().min(1).optional(),
     requireArtifacts: z.array(z.string().min(1)).optional(),
   })

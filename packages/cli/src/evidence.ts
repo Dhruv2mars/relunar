@@ -32,8 +32,12 @@ export async function assertEvidenceGates(
     throw new Error("Evidence gate failed: outcome requires at least one successful repro command (exit 0).");
   }
 
-  if (gate.requireProbeOutput && !reproCommands.some((command) => hasProbeOutput(command))) {
+  if (gate.requireProbeOutput && !reproCommands.some((command) => hasTextOutput(command))) {
     throw new Error("Evidence gate failed: at least one repro command must produce stdout or stderr.");
+  }
+
+  if (gate.requireProbeSignal && !reproCommands.some((command) => isFailureSignal(command) || hasTextOutput(command))) {
+    throw new Error("Evidence gate failed: at least one repro command must fail, time out, or produce output.");
   }
 
   if (gate.requireOutputMatch) {
@@ -67,10 +71,15 @@ export async function assertEvidenceGates(
 function resolveGate(outcome: ReproOutcome, config: RelunarConfig): EvidenceGate {
   const configured = config.evidence?.[outcome] ?? {};
   if (outcome === "reproduced") {
+    const hasExplicitSignalGate =
+      configured.requireProbeOutput !== undefined ||
+      configured.requireNonZeroExit !== undefined ||
+      configured.requireProbeSignal !== undefined;
     return {
       requireReproCommand: true,
-      requireProbeOutput: true,
       ...configured,
+      // Default: failure/timeout or captured text (Daytona may collapse stderr).
+      requireProbeSignal: configured.requireProbeSignal ?? (hasExplicitSignalGate ? false : true),
     };
   }
   if (outcome === "not_reproduced") {
@@ -89,12 +98,8 @@ function isFailureSignal(command: CommandEvidence): boolean {
   return command.status === "failed" || command.status === "timed_out";
 }
 
-function hasProbeOutput(command: CommandEvidence): boolean {
-  if (command.stdout.trim().length > 0 || command.stderr.trim().length > 0) {
-    return true;
-  }
-  // Providers that collapse stderr still leave a failure/timeout status as signal.
-  return command.status === "failed" || command.status === "timed_out";
+function hasTextOutput(command: CommandEvidence): boolean {
+  return command.stdout.trim().length > 0 || command.stderr.trim().length > 0;
 }
 
 /** Accept JS regexes plus a leading `(?i)` inline flag (documented in README). */

@@ -79,7 +79,7 @@ describe("agent-driven repro lifecycle", () => {
 
       await expect(
         finishRepro({ cwd, runId: started.runId, outcome: "reproduced", summary: "Claimed repro with empty probe.", sandboxProvider: provider }),
-      ).rejects.toThrow("stdout or stderr");
+      ).rejects.toThrow("fail, time out, or produce output");
       expect(sandbox.disposed).toBe(false);
     } finally {
       await rm(cwd, { recursive: true, force: true });

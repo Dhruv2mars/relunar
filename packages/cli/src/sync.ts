@@ -103,10 +103,7 @@ async function listRemoteTrackedFiles(sandbox: SandboxSession, timeoutSeconds: n
     // Fresh/broken clones may not have a git index yet; treat as empty.
     return [];
   }
-  return result.stdout
-    .split("\0")
-    .map((path) => path.trim())
-    .filter((path) => path.length > 0);
+  return result.stdout.split("\0").filter((path) => path.length > 0);
 }
 
 async function removeRemotePaths(sandbox: SandboxSession, paths: string[], timeoutSeconds: number): Promise<void> {
@@ -130,10 +127,7 @@ export async function listWorktreeFiles(cwd: string, includeUntracked: boolean, 
     args.push("--others", "--exclude-standard");
   }
   const { stdout } = await execFileAsync("git", args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-  const candidates = stdout
-    .split("\0")
-    .map((path) => path.trim())
-    .filter((path) => path.length > 0 && !isExcluded(path, exclude));
+  const candidates = stdout.split("\0").filter((path) => path.length > 0 && !isExcluded(path, exclude));
 
   const present: string[] = [];
   for (const path of candidates) {
@@ -162,9 +156,8 @@ export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): P
         maxBuffer: 32 * 1024 * 1024,
       });
       for (const path of stdout.split("\0")) {
-        const trimmed = path.trim();
-        if (trimmed.length > 0 && !isExcluded(trimmed, exclude)) {
-          paths.add(trimmed);
+        if (path.length > 0 && !isExcluded(path, exclude)) {
+          paths.add(path);
         }
       }
     } catch (error) {
