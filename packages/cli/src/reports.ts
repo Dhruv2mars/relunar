@@ -1,44 +1,47 @@
 import type { CommandEvidence, RunReport } from "./types";
 
+/**
+ * Maintainer-facing markdown for report.md and `--comment`.
+ * Agent machinery (nextStep, full issue body, setup dumps, sandbox IDs) stays in report.json.
+ */
 export function renderMarkdownReport(report: RunReport, maxLogLines: number): string {
-  const lines: string[] = [
-    "## Relunar Repro Report",
-    "",
-    `Status: ${formatStatus(report.status)}`,
-    isFinalizedRepro(report)
-      ? "Evidence: issue-specific commands captured in this report."
-      : "Evidence: environment baseline only; this command does not itself prove the issue behavior.",
-    "",
-    `Next step: ${report.nextStep}`,
-    "",
-  ];
+  const lines: string[] = [`## Repro: ${formatStatus(report.status)}`, ""];
 
-  if (report.summary) {
-    lines.push(`Summary: ${report.summary}`, "");
+  if (report.summary?.trim()) {
+    lines.push(report.summary.trim(), "");
+  } else if (!isFinalOutcome(report.status)) {
+    lines.push(statusBlurb(report), "");
   }
 
-  lines.push(
-    `Issue: #${report.issue.number} (${report.issue.state})`,
-    `Title: ${report.issue.title}`,
-    `Repo: ${report.repo}`,
-    `Commit: ${report.commit ?? "unknown"}`,
-    `Sandbox: Daytona ${report.sandbox.id ?? "unavailable"}`,
-    "",
-    "Issue body:",
-    fenced(report.issue.body.trim() || "(empty)"),
-    "",
-    "Commands:",
-  );
-
-  for (const command of report.commands) {
-    lines.push(`- ${command.command}: ${formatCommandStatus(command)}`);
+  const reproSteps = report.reproSteps?.trim();
+  if (reproSteps) {
+    lines.push("### Steps to reproduce", "", reproSteps, "");
   }
 
-  if (report.failure) {
-    lines.push("", "Failure:", fenced(excerpt(report.commands, maxLogLines)));
+  const observed = report.observed?.trim() || evidenceExcerpt(report.commands, maxLogLines);
+  if (observed) {
+    lines.push("### Observed", "", fenced(observed), "");
   }
 
-  lines.push("", "Artifacts:", `- Local run: .relunar/runs/${report.runId}`);
+  const expected = report.expected?.trim();
+  if (expected) {
+    lines.push("### Expected", "", expected, "");
+  }
+
+  lines.push("### Environment", "");
+  lines.push(`- Repo: \`${report.repo}\`${report.commit ? ` @ \`${report.commit}\`` : ""}`);
+  const environmentNotes = report.environmentNotes?.trim();
+  if (environmentNotes) {
+    for (const note of environmentNotes.split("\n")) {
+      const trimmed = note.trim();
+      if (trimmed) {
+        lines.push(trimmed.startsWith("-") ? trimmed : `- ${trimmed}`);
+      }
+    }
+  }
+  lines.push("");
+
+  lines.push(`Artifacts: \`.relunar/runs/${report.runId}\``);
   return `${lines.join("\n")}\n`;
 }
 
@@ -58,7 +61,7 @@ export function agentNextStep(report: RunReport): string {
   switch (report.status) {
     case "environment_ready":
       if (hasIssueProbeEvidence(report)) {
-        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --summary <text>\`.`;
+        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --summary <text>\` (optional: --repro-steps, --observed, --expected, --environment).`;
       }
       return `Environment ready only — not reproduced. Read issue.body, plan probes, then \`relunar repro exec ${report.runId} -- <command>\` (or \`relunar repro ${report.issue.number} -- <command>\`). Finish only after probe evidence with --outcome and --summary.`;
     case "passed":
@@ -87,12 +90,38 @@ export function redactSecret(value: string, secret: string | null): string {
   return value.split(secret).join("[redacted]");
 }
 
+function isFinalOutcome(status: RunReport["status"]): boolean {
+  return status === "reproduced" || status === "not_reproduced" || status === "blocked";
+}
+
+function statusBlurb(report: RunReport): string {
+  if (report.failure) {
+    return report.failure;
+  }
+  switch (report.status) {
+    case "environment_ready":
+      return hasIssueProbeEvidence(report)
+        ? "Sandbox ready; probe evidence recorded. Finish with an outcome when ready."
+        : "Sandbox ready for probing — not yet reproduced.";
+    case "passed":
+      return "Baseline passed (legacy dispose-on-ready).";
+    case "aborted":
+      return "Run aborted.";
+    case "setup_failed":
+      return "Setup failed before probing.";
+    case "baseline_failed":
+      return "Baseline failed before probing.";
+    default:
+      return formatStatus(report.status);
+  }
+}
+
 function formatStatus(status: RunReport["status"]): string {
   switch (status) {
     case "passed":
       return "Baseline passed";
     case "environment_ready":
-      return "Environment ready (not reproduced — probing still required)";
+      return "Environment ready";
     case "reproduced":
       return "Reproduced";
     case "not_reproduced":
@@ -108,31 +137,32 @@ function formatStatus(status: RunReport["status"]): string {
   }
 }
 
-function formatCommandStatus(command: CommandEvidence): string {
-  if (command.status === "timed_out") {
-    return "timed out";
+/** Prefer agent-supplied observed text; else last repro (or failing) command output, trimmed. */
+export function evidenceExcerpt(commands: CommandEvidence[], maxLogLines: number): string | null {
+  const reproCommands = commands.filter((command) => command.name === "repro");
+  const preferred =
+    [...reproCommands].reverse().find((command) => command.status === "failed" || command.status === "timed_out") ??
+    reproCommands.at(-1) ??
+    commands.find((command) => command.status === "failed" || command.status === "timed_out");
+
+  if (!preferred) {
+    return null;
   }
-  if (command.status === "passed") {
-    return "passed";
+
+  const output = [preferred.stderr, preferred.stdout].filter(Boolean).join("\n").trim();
+  if (!output) {
+    return preferred.status === "passed" ? null : "Command failed with no output.";
   }
-  if (command.exitCode === null) {
-    return command.status;
-  }
-  return `${command.status} (${command.exitCode})`;
+
+  return trimLog(output, maxLogLines);
 }
 
-function excerpt(commands: CommandEvidence[], maxLogLines: number): string {
-  const failed = commands.find((command) => command.status === "failed" || command.status === "timed_out");
-  if (!failed) {
-    return "No failing command captured.";
+function trimLog(output: string, maxLogLines: number): string {
+  const lines = output.split("\n");
+  if (lines.length <= maxLogLines) {
+    return output;
   }
-
-  const output = [failed.stderr, failed.stdout].filter(Boolean).join("\n").trim();
-  if (!output) {
-    return "Command failed with no output.";
-  }
-
-  return output.split("\n").slice(-maxLogLines).join("\n");
+  return lines.slice(-maxLogLines).join("\n");
 }
 
 function fenced(value: string): string {

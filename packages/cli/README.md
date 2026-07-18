@@ -45,18 +45,25 @@ relunar repro exec <run-id> -- bun repro.ts
 relunar runs show <run-id> --json
 
 # Agent judges outcome from probe evidence (environment_ready ≠ reproduced)
-relunar repro finish <run-id> --outcome reproduced --summary "Observed issue behavior."
+# Supply narrative fields for maintainer-useful comments — Relunar formats, does not invent steps
+relunar repro finish <run-id> \
+  --outcome reproduced \
+  --summary "Observed issue behavior." \
+  --repro-steps "1. …" \
+  --observed "key stderr…" \
+  --expected "…" \
+  --environment "tsc 5.x / node 22"
 ```
 
 Optional one-shot finish (flags before `--`):
 
 ```sh
-relunar repro 123 --finish --outcome reproduced --summary "Observed issue behavior." --comment -- bun repro.ts
+relunar repro 123 --finish --outcome reproduced --summary "Observed issue behavior." --repro-steps "1. run bun repro.ts" --comment -- bun repro.ts
 ```
 
-Post a GitHub issue comment only when explicit (`--comment` on finish).
+Post a GitHub issue comment only when explicit (`--comment` on finish). The comment (and `report.md`) is a short maintainer write-up: verdict, summary, optional agent-authored steps/observed/expected/environment, trimmed evidence, and an artifacts path. Harness details (`nextStep`, full issue body, setup dumps, sandbox IDs) stay in `report.json` for agents.
 
-`environment_ready` means the sandbox is ready for probing — not that the bug was reproduced. Run reports include `issue.body`, `nextStep`, and command evidence so agents can plan the next probe from harness JSON.
+`environment_ready` means the sandbox is ready for probing — not that the bug was reproduced.
 
 ## Repository Config
 
@@ -135,11 +142,11 @@ relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
 relunar repo link owner/repo
 relunar issues list [--state open|closed|all] [--limit N] [--json]
 relunar repro <issue-number> -- <probe-command>
-relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--comment] -- <probe-command>
+relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] -- <probe-command>
 relunar repro start <issue-number>
 relunar repro exec <run-id> -- <command>
 relunar repro upload <run-id> <local-path> <remote-path>
-relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--comment]
+relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment]
 relunar repro abort <run-id>
 relunar runs list [--json]
 relunar runs show <run-id> [--json]

@@ -156,7 +156,17 @@ export async function uploadReproFile(input: { cwd: string; runId: string; local
   return await persistRun(input.cwd, report, config.report.maxLogLines);
 }
 
-export async function finishRepro(input: { cwd: string; runId: string; outcome: ReproOutcome; summary: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+export type FinishNarrative = {
+  summary: string;
+  reproSteps?: string | undefined;
+  observed?: string | undefined;
+  expected?: string | undefined;
+  environmentNotes?: string | undefined;
+};
+
+export async function finishRepro(
+  input: { cwd: string; runId: string; outcome: ReproOutcome; sandboxProvider: SandboxProvider } & FinishNarrative,
+): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   if (!report.commands.some((command) => command.name === "repro")) {
     throw new Error("Cannot finish repro without issue-specific command evidence.");
@@ -170,9 +180,18 @@ export async function finishRepro(input: { cwd: string; runId: string; outcome: 
   await sandbox.dispose();
   report.status = input.outcome;
   report.summary = summary;
+  report.reproSteps = optionalText(input.reproSteps);
+  report.observed = optionalText(input.observed);
+  report.expected = optionalText(input.expected);
+  report.environmentNotes = optionalText(input.environmentNotes);
   report.failure = input.outcome === "blocked" ? summary : null;
   report.finishedAt = new Date().toISOString();
   return await persistRun(input.cwd, report, config.report.maxLogLines);
+}
+
+function optionalText(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 export async function abortRepro(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
@@ -256,6 +275,10 @@ async function finish(
     commands,
     failure,
     summary: null,
+    reproSteps: null,
+    observed: null,
+    expected: null,
+    environmentNotes: null,
     nextStep: "",
     startedAt,
     finishedAt: new Date().toISOString(),

@@ -29,9 +29,23 @@ describe("agent-driven repro lifecycle", () => {
       expect(executed.commands.at(-1)?.name).toBe("repro");
       expect(executed.nextStep).toContain("Probe evidence recorded");
 
-      const finished = await finishRepro({ cwd, runId: started.runId, outcome: "reproduced", summary: "Compiler crashes with the supplied source.", sandboxProvider: provider });
+      const finished = await finishRepro({
+        cwd,
+        runId: started.runId,
+        outcome: "reproduced",
+        summary: "Compiler crashes with the supplied source.",
+        reproSteps: "1. Run `bun repro.ts`",
+        observed: "Error: boom",
+        expected: "No crash",
+        environmentNotes: "bun 1.2",
+        sandboxProvider: provider,
+      });
       expect(finished.status).toBe("reproduced");
       expect(finished.summary).toBe("Compiler crashes with the supplied source.");
+      expect(finished.reproSteps).toBe("1. Run `bun repro.ts`");
+      expect(finished.observed).toBe("Error: boom");
+      expect(finished.expected).toBe("No crash");
+      expect(finished.environmentNotes).toBe("bun 1.2");
       expect(finished.nextStep).toContain("finalized as reproduced");
       expect(sandbox.disposed).toBe(true);
     } finally {
@@ -54,12 +68,36 @@ describe("agent-driven repro lifecycle", () => {
     }
   });
 
-  test("one-shot parse keeps finish flags before passthrough probe", () => {
-    const parsed = parseArgs(["repro", "42", "--finish", "--outcome", "reproduced", "--summary", "saw crash", "--comment", "--", "bun", "repro.ts"]);
+  test("one-shot parse keeps finish narrative flags before passthrough probe", () => {
+    const parsed = parseArgs([
+      "repro",
+      "42",
+      "--finish",
+      "--outcome",
+      "reproduced",
+      "--summary",
+      "saw crash",
+      "--repro-steps",
+      "1. run bun repro.ts",
+      "--observed",
+      "boom",
+      "--expected",
+      "no crash",
+      "--environment",
+      "node 22",
+      "--comment",
+      "--",
+      "bun",
+      "repro.ts",
+    ]);
     expect(parsed.positionals).toEqual(["repro", "42"]);
     expect(parsed.flags.finish).toBe(true);
     expect(parsed.flags.outcome).toBe("reproduced");
     expect(parsed.flags.summary).toBe("saw crash");
+    expect(parsed.flags["repro-steps"]).toBe("1. run bun repro.ts");
+    expect(parsed.flags.observed).toBe("boom");
+    expect(parsed.flags.expected).toBe("no crash");
+    expect(parsed.flags.environment).toBe("node 22");
     expect(parsed.flags.comment).toBe(true);
     expect(parsed.passthrough).toEqual(["bun", "repro.ts"]);
   });

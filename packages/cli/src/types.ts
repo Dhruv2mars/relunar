@@ -75,7 +75,16 @@ export type RunReport = {
   };
   commands: CommandEvidence[];
   failure: string | null;
+  /** Plain-language verdict of what was tried / found. Required to finish. */
   summary?: string | null | undefined;
+  /** Agent-authored copy-pasteable repro steps. Relunar never invents these. */
+  reproSteps?: string | null | undefined;
+  /** Agent-authored observed behavior (or key stderr/stdout signal). */
+  observed?: string | null | undefined;
+  /** Agent-authored expected behavior when known. */
+  expected?: string | null | undefined;
+  /** Brief environment that matters (tsc/node/OS). Not sandbox IDs. */
+  environmentNotes?: string | null | undefined;
   /** Agent-facing hint. environment_ready means probing is still required. */
   nextStep: string;
   startedAt: string;

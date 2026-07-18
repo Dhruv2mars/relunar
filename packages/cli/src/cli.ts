@@ -299,9 +299,9 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
   if (action === "oneshot") {
     const wantFinish = flagBoolean(flags, "finish");
     const outcome = parseOutcome(flagString(flags, "outcome"));
-    const summary = flagString(flags, "summary");
-    if (wantFinish && (!outcome || !summary)) {
-      deps.io.stderr("Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> -- <probe-command>\n");
+    const narrative = parseFinishNarrative(flags);
+    if (wantFinish && (!outcome || !narrative)) {
+      deps.io.stderr("Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] -- <probe-command>\n");
       return 1;
     }
   }
@@ -326,7 +326,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     const issueNumber = legacyIssueNumber!;
     const wantFinish = flagBoolean(flags, "finish");
     const outcome = parseOutcome(flagString(flags, "outcome"));
-    const summary = flagString(flags, "summary");
+    const narrative = parseFinishNarrative(flags);
 
     const active = await findActiveRunForIssue(deps.cwd, issueNumber);
     if (active) {
@@ -344,7 +344,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     report = await execRepro({ cwd: deps.cwd, runId: report.runId, command: shellCommand(passthrough), sandboxProvider: provider });
 
     if (wantFinish) {
-      report = await finishRepro({ cwd: deps.cwd, runId: report.runId, outcome: outcome!, summary: summary!, sandboxProvider: provider });
+      report = await finishRepro({ cwd: deps.cwd, runId: report.runId, outcome: outcome!, ...narrative!, sandboxProvider: provider });
       await maybeComment(client, repo, report.issue.number, report, flagBoolean(flags, "comment"));
     }
   } else if (action === "start") {
@@ -369,12 +369,14 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     report = await uploadReproFile({ cwd: deps.cwd, runId: args[1], localPath: args[2], remotePath: args[3], sandboxProvider: provider });
   } else if (action === "finish") {
     const outcome = parseOutcome(flagString(flags, "outcome"));
-    const summary = flagString(flags, "summary");
-    if (!args[1] || !outcome || !summary) {
-      deps.io.stderr("Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--comment]\n");
+    const narrative = parseFinishNarrative(flags);
+    if (!args[1] || !outcome || !narrative) {
+      deps.io.stderr(
+        "Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment]\n",
+      );
       return 1;
     }
-    report = await finishRepro({ cwd: deps.cwd, runId: args[1], outcome, summary, sandboxProvider: provider });
+    report = await finishRepro({ cwd: deps.cwd, runId: args[1], outcome, ...narrative, sandboxProvider: provider });
     await maybeComment(client, repo, report.issue.number, report, flagBoolean(flags, "comment"));
   } else if (action === "abort") {
     if (!args[1]) {
@@ -408,13 +410,43 @@ async function maybeComment(
   if (!isFinalizedRepro(report)) {
     throw new Error(`Refusing GitHub comment for non-finalized run ${report.runId}.`);
   }
-  await client.createComment(repo, issueNumber, renderMarkdownReport(report, 200));
+  await client.createComment(repo, issueNumber, renderMarkdownReport(report, 40));
 }
 
 function parseOutcome(value: string | undefined): ReproOutcome | null {
   if (value === "reproduced" || value === "blocked") return value;
   if (value === "not-reproduced") return "not_reproduced";
   return null;
+}
+
+/** Agent-authored narrative for maintainer comments. Relunar formats; does not invent steps. */
+function parseFinishNarrative(flags: Record<string, string | boolean>): {
+  summary: string;
+  reproSteps?: string;
+  observed?: string;
+  expected?: string;
+  environmentNotes?: string;
+} | null {
+  const summary = flagString(flags, "summary")?.trim();
+  if (!summary) {
+    return null;
+  }
+  const narrative: {
+    summary: string;
+    reproSteps?: string;
+    observed?: string;
+    expected?: string;
+    environmentNotes?: string;
+  } = { summary };
+  const reproSteps = flagString(flags, "repro-steps")?.trim();
+  const observed = flagString(flags, "observed")?.trim();
+  const expected = flagString(flags, "expected")?.trim();
+  const environmentNotes = flagString(flags, "environment")?.trim();
+  if (reproSteps) narrative.reproSteps = reproSteps;
+  if (observed) narrative.observed = observed;
+  if (expected) narrative.expected = expected;
+  if (environmentNotes) narrative.environmentNotes = environmentNotes;
+  return narrative;
 }
 
 function shellCommand(args: string[]): string {
@@ -539,12 +571,15 @@ Agent workflow:
        relunar repro start <issue-number>
        relunar repro upload <run-id> <local-path> <remote-path>
        relunar repro exec <run-id> -- <command>
-  4. Agent judges outcome from probe evidence, then:
-       relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--comment]
+  4. Agent judges outcome from probe evidence, then finishes with narrative fields
+     (Relunar formats the comment; it does not invent repro steps):
+       relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked \\
+         --summary <text> [--repro-steps <text>] [--observed <text>] \\
+         [--expected <text>] [--environment <text>] [--comment]
 
   environment_ready means the sandbox is ready — not that the issue was reproduced.
   Put finish flags before \`--\` when combining with one-shot:
-       relunar repro <issue> --finish --outcome reproduced --summary "..." -- <probe-command>
+       relunar repro <issue> --finish --outcome reproduced --summary "..." --repro-steps "..." -- <probe-command>
 
 Human setup (once):
   1. npm install -g @dhruv2mars/relunar
@@ -570,11 +605,11 @@ Commands:
   relunar repo link owner/repo
   relunar issues list [--state open|closed|all] [--limit N] [--json]
   relunar repro <issue-number> -- <probe-command>
-  relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--comment] -- <probe-command>
+  relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] -- <probe-command>
   relunar repro start <issue-number>
   relunar repro exec <run-id> -- <command>
   relunar repro upload <run-id> <local-path> <remote-path>
-  relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--comment]
+  relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment]
   relunar repro abort <run-id>
   relunar runs list [--json]
   relunar runs show <run-id> [--json]
