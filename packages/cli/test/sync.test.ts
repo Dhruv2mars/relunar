@@ -56,14 +56,14 @@ describe("worktree sync", () => {
     }
   });
 
-  test("syncWorktree removes locally deleted tracked files remotely", async () => {
+  test("syncWorktree removes unstaged deleted tracked files remotely", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-delete-"));
     try {
       initRepo(cwd);
       await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
       await writeFile(join(cwd, "gone.ts"), "gone\n", "utf8");
       execFileSync("git", ["add", "keep.ts", "gone.ts"], { cwd });
-      execFileSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-m", "init"], { cwd });
+      commit(cwd, "init");
       await rm(join(cwd, "gone.ts"));
 
       expect(await listDeletedTrackedFiles(cwd, [])).toEqual(["gone.ts"]);
@@ -85,7 +85,40 @@ describe("worktree sync", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("syncWorktree removes staged git rm deletions remotely", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-gitrm-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
+      await writeFile(join(cwd, "staged-gone.ts"), "gone\n", "utf8");
+      execFileSync("git", ["add", "keep.ts", "staged-gone.ts"], { cwd });
+      commit(cwd, "init");
+      execFileSync("git", ["rm", "staged-gone.ts"], { cwd });
+
+      expect(await listDeletedTrackedFiles(cwd, [])).toEqual(["staged-gone.ts"]);
+      expect(await listWorktreeFiles(cwd, false, [])).toEqual(["keep.ts"]);
+
+      const sandbox = new RecordingSandbox();
+      const result = await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+
+      expect(result.deletedCount).toBe(1);
+      expect(sandbox.commands.some((command) => command.includes("rm -f") && command.includes("repo/staged-gone.ts"))).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
+
+function commit(cwd: string, message: string): void {
+  execFileSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-m", message], { cwd });
+}
 
 function initRepo(cwd: string): void {
   execFileSync("git", ["init"], { cwd });

@@ -105,16 +105,44 @@ export async function listWorktreeFiles(cwd: string, includeUntracked: boolean, 
   return present;
 }
 
-/** Tracked files deleted from the local worktree that must be removed remotely. */
+/**
+ * Files present in HEAD but absent from the worktree (unstaged `rm` or staged `git rm`).
+ * Prefer diff-against-HEAD so staged removals are included; `ls-files --deleted` only
+ * covers unstaged deletions still listed in the index.
+ */
 export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): Promise<string[]> {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, "ls-files", "-z", "--deleted"], {
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  return stdout
-    .split("\0")
-    .map((path) => path.trim())
-    .filter((path) => path.length > 0 && !isExcluded(path, exclude));
+  const paths = new Set<string>();
+  const commands = [
+    ["-C", cwd, "diff", "--name-only", "-z", "--diff-filter=D", "HEAD"],
+    ["-C", cwd, "ls-files", "-z", "--deleted"],
+  ];
+  for (const args of commands) {
+    try {
+      const { stdout } = await execFileAsync("git", args, {
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+      });
+      for (const path of stdout.split("\0")) {
+        const trimmed = path.trim();
+        if (trimmed.length > 0 && !isExcluded(trimmed, exclude)) {
+          paths.add(trimmed);
+        }
+      }
+    } catch (error) {
+      // No HEAD (empty repo) — fall through; ls-files --deleted still applies.
+      if (!isNoHeadError(error)) {
+        throw error;
+      }
+    }
+  }
+  return [...paths].sort();
+}
+
+function isNoHeadError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /unknown revision|bad revision|ambiguous argument 'HEAD'|does not have any commits/i.test(error.message);
 }
 
 export function isExcluded(path: string, exclude: string[]): boolean {
