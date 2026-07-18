@@ -177,6 +177,32 @@ describe("worktree sync", () => {
     }
   });
 
+  test("keeps previously synced untracked files that still exist locally", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-keep-untracked-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
+      await writeFile(join(cwd, "repro.ts"), "console.log('repro')\n", "utf8");
+      execFileSync("git", ["add", "keep.ts"], { cwd });
+      commit(cwd, "init");
+
+      const sandbox = new RecordingSandbox();
+      // Later sync without --include-untracked must not wipe the earlier upload.
+      await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+        previouslySyncedPaths: ["keep.ts", "repro.ts"],
+      });
+
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/repro.ts"))).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("syncWorktree uploads archive and extracts into repo/", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-run-"));
     try {
