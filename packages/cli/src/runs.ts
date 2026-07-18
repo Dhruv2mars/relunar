@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { renderMarkdownReport } from "./reports";
-import type { CommandEvidence, RunReport } from "./types";
+import type { CommandEvidence, RepoSlug, RunReport } from "./types";
 
 export function runStoreDir(cwd: string): string {
   return join(cwd, ".relunar", "runs");
@@ -60,6 +60,15 @@ export async function readRun(cwd: string, runId: string): Promise<RunReport> {
   } catch {
     throw new Error(`Run report is corrupt: ${runId}`);
   }
+}
+
+export async function findActiveRunForIssue(cwd: string, issueNumber: number, repo: RepoSlug): Promise<RunReport | null> {
+  const runs = await listRuns(cwd);
+  return (
+    runs.find(
+      (run) => run.issue.number === issueNumber && run.repo === repo && run.status === "environment_ready",
+    ) ?? null
+  );
 }
 
 function renderLogs(commands: CommandEvidence[]): string {

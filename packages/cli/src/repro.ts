@@ -1,8 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseRelunarConfig, defaultRelunarConfig } from "./config";
-import { redactSecret } from "./reports";
-import { createRunId, readRun, writeRun } from "./runs";
+import { parseRelunarConfig, defaultRelunarConfig, resolveAutoStopMinutes } from "./config";
+import { assertEvidenceGates } from "./evidence";
+import { redactSecret, withAgentNextStep } from "./reports";
+import { createRunId, readRun, runStoreDir, writeRun } from "./runs";
+import { syncWorktree } from "./sync";
 import type { CommandEvidence, Issue, RelunarConfig, RepoSlug, ReproOutcome, RunReport, SandboxProvider, SandboxSession } from "./types";
 
 export type ReproInput = {
@@ -43,6 +45,7 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
       runId,
       image: config.sandbox?.image,
       resources: config.sandbox?.resources,
+      autoStopMinutes: resolveAutoStopMinutes(config),
     });
 
     commands.push(
@@ -119,10 +122,31 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
   }
 }
 
-export async function execRepro(input: { cwd: string; runId: string; command: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+export type ExecReproInput = {
+  cwd: string;
+  runId: string;
+  command: string;
+  sandboxProvider: SandboxProvider;
+  sync?: boolean | undefined;
+  includeUntracked?: boolean | undefined;
+};
+
+export async function execRepro(input: ExecReproInput): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
+
+  const shouldSync = input.sync === true || config.sync?.onExec === true;
+  if (shouldSync) {
+    const syncEvidence = await recordSync(input.cwd, report.runId, sandbox, config, input.includeUntracked);
+    report.commands.push(syncEvidence);
+    if (syncEvidence.status === "failed") {
+      report.finishedAt = new Date().toISOString();
+      await persistRun(input.cwd, report, config.report.maxLogLines);
+      throw new Error(`Worktree sync failed: ${syncEvidence.stderr || "unknown error"}`);
+    }
+  }
+
   report.commands.push(
     await execEvidence({
       sandbox,
@@ -134,14 +158,32 @@ export async function execRepro(input: { cwd: string; runId: string; command: st
     }),
   );
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
+}
+
+export async function syncRepro(input: {
+  cwd: string;
+  runId: string;
+  sandboxProvider: SandboxProvider;
+  includeUntracked?: boolean | undefined;
+}): Promise<RunReport> {
+  const report = await requireReadyRun(input.cwd, input.runId);
+  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
+  const syncEvidence = await recordSync(input.cwd, report.runId, sandbox, config, input.includeUntracked);
+  report.commands.push(syncEvidence);
+  report.finishedAt = new Date().toISOString();
+  const persisted = await persistRun(input.cwd, report, config.report.maxLogLines);
+  if (syncEvidence.status === "failed") {
+    throw new Error(`Worktree sync failed: ${syncEvidence.stderr || "unknown error"}`);
+  }
+  return persisted;
 }
 
 export async function uploadReproFile(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const started = Date.now();
   await sandbox.upload(input.localPath, input.remotePath);
   report.commands.push({
@@ -154,39 +196,73 @@ export async function uploadReproFile(input: { cwd: string; runId: string; local
     stderr: "",
   });
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
 }
 
-export async function finishRepro(input: { cwd: string; runId: string; outcome: ReproOutcome; summary: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+export type FinishNarrative = {
+  summary: string;
+  reproSteps?: string | undefined;
+  observed?: string | undefined;
+  expected?: string | undefined;
+  environmentNotes?: string | undefined;
+};
+
+export async function finishRepro(
+  input: {
+    cwd: string;
+    runId: string;
+    outcome: ReproOutcome;
+    sandboxProvider: SandboxProvider;
+    skipEvidenceGates?: boolean | undefined;
+  } & FinishNarrative,
+): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
-  if (!report.commands.some((command) => command.name === "repro")) {
-    throw new Error("Cannot finish repro without issue-specific command evidence.");
-  }
   const summary = input.summary.trim();
   if (!summary) {
     throw new Error("Cannot finish repro without a summary.");
   }
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
+
+  await assertEvidenceGates(report, input.outcome, config, {
+    skip: input.skipEvidenceGates === true,
+    sandbox,
+    timeoutSeconds: config.commandTimeoutSeconds,
+  });
+
   await sandbox.dispose();
+
   report.status = input.outcome;
   report.summary = summary;
+  report.reproSteps = optionalText(input.reproSteps);
+  report.observed = optionalText(input.observed);
+  report.expected = optionalText(input.expected);
+  report.environmentNotes = optionalText(input.environmentNotes);
   report.failure = input.outcome === "blocked" ? summary : null;
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
+}
+
+function optionalText(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 export async function abortRepro(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
-  await sandbox.dispose();
+  try {
+    const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
+    await sandbox.dispose();
+  } catch {
+    // Sandbox already gone; resumeAndTouch marks the run aborted when possible.
+    if (report.status === "aborted") {
+      return report;
+    }
+  }
   report.status = "aborted";
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
 }
 
 async function requireReadyRun(cwd: string, runId: string): Promise<RunReport> {
@@ -202,6 +278,91 @@ function requireSandboxId(report: RunReport): string {
     throw new Error(`Run ${report.runId} has no sandbox id.`);
   }
   return report.sandbox.id;
+}
+
+async function resumeAndTouch(
+  cwd: string,
+  provider: SandboxProvider,
+  report: RunReport,
+  config: RelunarConfig,
+): Promise<SandboxSession> {
+  try {
+    const sandbox = await provider.resumeSandbox(requireSandboxId(report));
+    const minutes = resolveAutoStopMinutes(config);
+    if (sandbox.touchIdle) {
+      await sandbox.touchIdle(minutes);
+    }
+    return sandbox;
+  } catch (error) {
+    // Mark the run inactive so oneshot resume does not keep selecting a dead sandbox.
+    if (report.status === "environment_ready") {
+      report.status = "aborted";
+      report.failure = error instanceof Error ? error.message : String(error);
+      report.finishedAt = new Date().toISOString();
+      await persistRun(cwd, report, config.report.maxLogLines);
+    }
+    throw error;
+  }
+}
+
+async function recordSync(
+  cwd: string,
+  runId: string,
+  sandbox: SandboxSession,
+  config: RelunarConfig,
+  includeUntrackedOverride?: boolean,
+): Promise<CommandEvidence> {
+  const started = Date.now();
+  const includeUntracked = includeUntrackedOverride ?? config.sync?.includeUntracked ?? false;
+  const manifestPath = join(runStoreDir(cwd), runId, "sync-manifest.json");
+  try {
+    const previouslySyncedPaths = await readSyncManifest(manifestPath);
+    const result = await syncWorktree({
+      cwd,
+      sandbox,
+      includeUntracked,
+      exclude: config.sync?.exclude ?? [],
+      timeoutSeconds: config.commandTimeoutSeconds,
+      previouslySyncedPaths,
+    });
+    await writeSyncManifest(manifestPath, result.syncedPaths);
+    return {
+      name: "repro_sync",
+      command: `sync worktree (${result.fileCount} files, ${result.deletedCount} deleted)`,
+      status: "passed",
+      exitCode: 0,
+      durationMs: Date.now() - started,
+      stdout: `synced ${result.fileCount} files, removed ${result.deletedCount} (${result.archiveBytes} bytes)`,
+      stderr: "",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      name: "repro_sync",
+      command: "sync worktree",
+      status: "failed",
+      exitCode: 1,
+      durationMs: Date.now() - started,
+      stdout: "",
+      stderr: message,
+    };
+  }
+}
+
+async function readSyncManifest(path: string): Promise<string[]> {
+  try {
+    const raw = JSON.parse(await readFile(path, "utf8")) as { paths?: unknown };
+    return Array.isArray(raw.paths) ? raw.paths.filter((path): path is string => typeof path === "string") : [];
+  } catch (error) {
+    if (isNotFound(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function writeSyncManifest(path: string, paths: string[]): Promise<void> {
+  await writeFile(path, `${JSON.stringify({ paths }, null, 2)}\n`, "utf8");
 }
 
 async function execEvidence(input: {
@@ -240,12 +401,14 @@ async function finish(
   failure: string | null,
   config: RelunarConfig,
 ): Promise<RunReport> {
-  const report: RunReport = {
+  const report = withAgentNextStep({
     runId,
     status,
     issue: {
       number: input.issue.number,
       title: input.issue.title,
+      body: input.issue.body,
+      state: input.issue.state,
       url: input.issue.url,
     },
     repo: input.repo,
@@ -258,12 +421,23 @@ async function finish(
     commands,
     failure,
     summary: null,
+    reproSteps: null,
+    observed: null,
+    expected: null,
+    environmentNotes: null,
+    nextStep: "",
     startedAt,
     finishedAt: new Date().toISOString(),
-  };
+  });
 
   await writeRun(input.cwd, report, config.report.maxLogLines);
   return report;
+}
+
+async function persistRun(cwd: string, report: RunReport, maxLogLines: number): Promise<RunReport> {
+  const next = withAgentNextStep(report);
+  await writeRun(cwd, next, maxLogLines);
+  return next;
 }
 
 function lastFailed(commands: CommandEvidence[]): boolean {
