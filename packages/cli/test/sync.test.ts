@@ -3,14 +3,14 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { isExcluded, listWorktreeFiles, syncWorktree } from "../src/sync";
+import { isExcluded, listDeletedTrackedFiles, listWorktreeFiles, syncWorktree } from "../src/sync";
 import type { SandboxExecResult, SandboxSession } from "../src/types";
 
 describe("worktree sync", () => {
   test("lists tracked files and excludes prefixes", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-list-"));
     try {
-      execFileSync("git", ["init"], { cwd });
+      initRepo(cwd);
       await writeFile(join(cwd, "src.ts"), "export {}\n", "utf8");
       await mkdir(join(cwd, "node_modules", "pkg"), { recursive: true });
       await writeFile(join(cwd, "node_modules", "pkg", "index.js"), "module.exports = {}\n", "utf8");
@@ -32,7 +32,7 @@ describe("worktree sync", () => {
   test("syncWorktree uploads archive and extracts into repo/", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-run-"));
     try {
-      execFileSync("git", ["init"], { cwd });
+      initRepo(cwd);
       await writeFile(join(cwd, "probe.sh"), "echo hi\n", "utf8");
       execFileSync("git", ["add", "probe.sh"], { cwd });
 
@@ -46,6 +46,7 @@ describe("worktree sync", () => {
       });
 
       expect(result.fileCount).toBe(1);
+      expect(result.deletedCount).toBe(0);
       expect(result.archiveBytes).toBeGreaterThan(0);
       expect(sandbox.uploads).toHaveLength(1);
       expect(sandbox.uploads[0]?.remotePath).toBe("/tmp/relunar-worktree-sync.tgz");
@@ -54,7 +55,41 @@ describe("worktree sync", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("syncWorktree removes locally deleted tracked files remotely", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-delete-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
+      await writeFile(join(cwd, "gone.ts"), "gone\n", "utf8");
+      execFileSync("git", ["add", "keep.ts", "gone.ts"], { cwd });
+      execFileSync("git", ["-c", "user.email=test@example.com", "-c", "user.name=Test", "commit", "-m", "init"], { cwd });
+      await rm(join(cwd, "gone.ts"));
+
+      expect(await listDeletedTrackedFiles(cwd, [])).toEqual(["gone.ts"]);
+      expect(await listWorktreeFiles(cwd, false, [])).toEqual(["keep.ts"]);
+
+      const sandbox = new RecordingSandbox();
+      const result = await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+
+      expect(result.fileCount).toBe(1);
+      expect(result.deletedCount).toBe(1);
+      expect(sandbox.commands.some((command) => command.includes("rm -f") && command.includes("repo/gone.ts"))).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
+
+function initRepo(cwd: string): void {
+  execFileSync("git", ["init"], { cwd });
+}
 
 class RecordingSandbox implements SandboxSession {
   readonly id = "sandbox-sync";

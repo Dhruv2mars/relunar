@@ -208,7 +208,6 @@ export async function finishRepro(
     runId: string;
     outcome: ReproOutcome;
     sandboxProvider: SandboxProvider;
-    keepSandbox?: boolean | undefined;
     skipEvidenceGates?: boolean | undefined;
   } & FinishNarrative,
 ): Promise<RunReport> {
@@ -226,9 +225,7 @@ export async function finishRepro(
     timeoutSeconds: config.commandTimeoutSeconds,
   });
 
-  if (!input.keepSandbox) {
-    await sandbox.dispose();
-  }
+  await sandbox.dispose();
 
   report.status = input.outcome;
   report.summary = summary;
@@ -298,11 +295,11 @@ async function recordSync(
     });
     return {
       name: "repro_sync",
-      command: `sync worktree (${result.fileCount} files)`,
+      command: `sync worktree (${result.fileCount} files, ${result.deletedCount} deleted)`,
       status: "passed",
       exitCode: 0,
       durationMs: Date.now() - started,
-      stdout: `synced ${result.fileCount} files (${result.archiveBytes} bytes)`,
+      stdout: `synced ${result.fileCount} files, removed ${result.deletedCount} (${result.archiveBytes} bytes)`,
       stderr: "",
     };
   } catch (error) {

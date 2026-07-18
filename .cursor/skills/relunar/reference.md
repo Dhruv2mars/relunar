@@ -24,7 +24,7 @@ bun /Users/dhruv2mars/dev/github/relunar/packages/cli/dist/index.js
 | Sync dirty tree | `relunar repro sync <run-id> [--include-untracked]` |
 | Upload file | `relunar repro upload <run-id> <local> <remote>` |
 | Exec in sandbox | `relunar repro exec <run-id> [--sync] -- <cmd>` |
-| Finish | `relunar repro finish <run-id> --outcome … --summary … [narrative flags] [--comment] [--keep-sandbox]` |
+| Finish | `relunar repro finish <run-id> --outcome … --summary … [narrative flags] [--comment]` |
 | Abort | `relunar repro abort <run-id>` |
 | Inspect | `relunar runs show <run-id> --json` / `relunar runs list --json` |
 

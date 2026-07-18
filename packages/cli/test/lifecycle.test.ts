@@ -86,24 +86,25 @@ describe("agent-driven repro lifecycle", () => {
     }
   });
 
-  test("keep-sandbox leaves sandbox alive after finish", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-keep-"));
+  test("refreshes idle TTL on exec while keeping sandbox warm until finish", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-warm-"));
     try {
       await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
       const sandbox = new FakeSandbox();
       const provider = fakeProvider(sandbox);
       const started = await startRepro(input(cwd, provider));
+      expect(sandbox.disposed).toBe(false);
       await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", sandboxProvider: provider });
+      expect(sandbox.touchCount).toBeGreaterThan(0);
+      expect(sandbox.disposed).toBe(false);
       await finishRepro({
         cwd,
         runId: started.runId,
         outcome: "reproduced",
-        summary: "Still warm for follow-up.",
-        keepSandbox: true,
+        summary: "Warm until finish, then disposed.",
         sandboxProvider: provider,
       });
-      expect(sandbox.disposed).toBe(false);
-      expect(sandbox.touchCount).toBeGreaterThan(0);
+      expect(sandbox.disposed).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

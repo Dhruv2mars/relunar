@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -17,19 +17,35 @@ export type SyncOptions = {
 
 export type SyncResult = {
   fileCount: number;
+  deletedCount: number;
   archiveBytes: number;
 };
 
 const DEFAULT_EXCLUDE = ["node_modules", ".git", ".relunar", "target", "dist", ".e2e-reports", ".agent-logs"];
 
-/** Sync dirty local worktree files into sandbox `repo/` via tar upload + extract. */
+/** Sync dirty local worktree into sandbox `repo/`: overlay present files and remove deletions. */
 export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
   const exclude = options.exclude.length > 0 ? options.exclude : DEFAULT_EXCLUDE;
   const files = await listWorktreeFiles(options.cwd, options.includeUntracked, exclude);
-  if (files.length === 0) {
-    return { fileCount: 0, archiveBytes: 0 };
+  const deleted = await listDeletedTrackedFiles(options.cwd, exclude);
+
+  if (files.length === 0 && deleted.length === 0) {
+    return { fileCount: 0, deletedCount: 0, archiveBytes: 0 };
   }
 
+  let archiveBytes = 0;
+  if (files.length > 0) {
+    archiveBytes = await uploadAndExtract(options, files);
+  }
+
+  if (deleted.length > 0) {
+    await removeRemotePaths(options.sandbox, deleted, options.timeoutSeconds);
+  }
+
+  return { fileCount: files.length, deletedCount: deleted.length, archiveBytes };
+}
+
+async function uploadAndExtract(options: SyncOptions, files: string[]): Promise<number> {
   const tempDir = await mkdtemp(join(tmpdir(), "relunar-sync-"));
   const listPath = join(tempDir, "files.txt");
   const archivePath = join(tempDir, "worktree.tgz");
@@ -49,18 +65,52 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
     if (extract.exitCode !== 0) {
       throw new Error(`Worktree sync extract failed: ${extract.stderr || extract.stdout || `exit ${extract.exitCode}`}`);
     }
-    return { fileCount: files.length, archiveBytes: size };
+    return size;
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 }
 
+async function removeRemotePaths(sandbox: SandboxSession, paths: string[], timeoutSeconds: number): Promise<void> {
+  // Batch deletes to avoid giant command lines; paths are shell-quoted.
+  const batchSize = 50;
+  for (let index = 0; index < paths.length; index += batchSize) {
+    const batch = paths.slice(index, index + batchSize);
+    const quoted = batch.map((path) => shellQuote(`repo/${path}`)).join(" ");
+    const result = await sandbox.run(`rm -f ${quoted}`, ".", timeoutSeconds);
+    if (result.exitCode !== 0) {
+      throw new Error(`Worktree sync delete failed: ${result.stderr || result.stdout || `exit ${result.exitCode}`}`);
+    }
+  }
+}
+
+/** Present worktree files to overlay (skips index entries missing on disk). */
 export async function listWorktreeFiles(cwd: string, includeUntracked: boolean, exclude: string[]): Promise<string[]> {
   const args = ["-C", cwd, "ls-files", "-z", "--cached"];
   if (includeUntracked) {
     args.push("--others", "--exclude-standard");
   }
   const { stdout } = await execFileAsync("git", args, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  const candidates = stdout
+    .split("\0")
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0 && !isExcluded(path, exclude));
+
+  const present: string[] = [];
+  for (const path of candidates) {
+    if (await pathExists(join(cwd, path))) {
+      present.push(path);
+    }
+  }
+  return present;
+}
+
+/** Tracked files deleted from the local worktree that must be removed remotely. */
+export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): Promise<string[]> {
+  const { stdout } = await execFileAsync("git", ["-C", cwd, "ls-files", "-z", "--deleted"], {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
   return stdout
     .split("\0")
     .map((path) => path.trim())
@@ -76,6 +126,15 @@ export function isExcluded(path: string, exclude: string[]): boolean {
     }
     return normalized === needle || normalized.startsWith(`${needle}/`) || normalized.includes(`/${needle}/`);
   });
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function shellQuote(value: string): string {

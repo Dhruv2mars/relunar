@@ -357,7 +357,6 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
         outcome: outcome!,
         ...narrative!,
         sandboxProvider: provider,
-        keepSandbox: flagBoolean(flags, "keep-sandbox"),
         skipEvidenceGates: flagBoolean(flags, "skip-evidence-gates"),
       });
       await maybeComment(client, repo, report.issue.number, report, flagBoolean(flags, "comment"));
@@ -405,7 +404,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     const narrative = parseFinishNarrative(flags);
     if (!args[1] || !outcome || !narrative) {
       deps.io.stderr(
-        "Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--keep-sandbox] [--skip-evidence-gates]\n",
+        "Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]\n",
       );
       return 1;
     }
@@ -415,7 +414,6 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       outcome,
       ...narrative,
       sandboxProvider: provider,
-      keepSandbox: flagBoolean(flags, "keep-sandbox"),
       skipEvidenceGates: flagBoolean(flags, "skip-evidence-gates"),
     });
     await maybeComment(client, repo, report.issue.number, report, flagBoolean(flags, "comment"));
@@ -651,12 +649,12 @@ Commands:
   relunar repo link owner/repo
   relunar issues list [--state open|closed|all] [--limit N] [--json]
   relunar repro <issue-number> [--sync] [--include-untracked] -- <probe-command>
-  relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--keep-sandbox] [--skip-evidence-gates] -- <probe-command>
+  relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates] -- <probe-command>
   relunar repro start <issue-number>
   relunar repro sync <run-id> [--include-untracked]
   relunar repro exec <run-id> [--sync] [--include-untracked] -- <command>
   relunar repro upload <run-id> <local-path> <remote-path>
-  relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--keep-sandbox] [--skip-evidence-gates]
+  relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]
   relunar repro abort <run-id>
   relunar runs list [--json]
   relunar runs show <run-id> [--json]

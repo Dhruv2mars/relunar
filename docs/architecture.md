@@ -54,7 +54,7 @@ relunar repro finish <run-id> --outcome <outcome> --summary <text> [--comment]
   -> record reproduced, not_reproduced, or blocked outcome
   -> write report.json, report.md, logs.txt
   -> optionally post GitHub comment
-  -> cleanup sandbox (unless --keep-sandbox)
+  -> cleanup sandbox
 ```
 
-Sandbox stays warm across probe iterations until finish/abort. Idle auto-stop defaults to 60 minutes (`sandbox.autoStopMinutes`) and is refreshed on each resume.
+Sandbox stays warm across probe iterations until finish/abort. Idle auto-stop defaults to 60 minutes (`sandbox.autoStopMinutes`) and is refreshed on each resume. Sync overlays present files and removes locally deleted tracked paths.
