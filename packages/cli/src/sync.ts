@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { SandboxSession } from "./types";
 
+type FsStat = Awaited<ReturnType<typeof stat>>;
+
 const execFileAsync = promisify(execFile);
 
 export type SyncOptions = {
@@ -33,13 +35,14 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
     return { fileCount: 0, deletedCount: 0, archiveBytes: 0 };
   }
 
+  // Remove remote deletions first so file→directory refactors can extract cleanly.
+  if (deleted.length > 0) {
+    await removeRemotePaths(options.sandbox, deleted, options.timeoutSeconds);
+  }
+
   let archiveBytes = 0;
   if (files.length > 0) {
     archiveBytes = await uploadAndExtract(options, files);
-  }
-
-  if (deleted.length > 0) {
-    await removeRemotePaths(options.sandbox, deleted, options.timeoutSeconds);
   }
 
   return { fileCount: files.length, deletedCount: deleted.length, archiveBytes };
@@ -50,8 +53,9 @@ async function uploadAndExtract(options: SyncOptions, files: string[]): Promise<
   const listPath = join(tempDir, "files.txt");
   const archivePath = join(tempDir, "worktree.tgz");
   try {
-    await writeFile(listPath, `${files.join("\n")}\n`, "utf8");
-    await execFileAsync("tar", ["-czf", archivePath, "-C", options.cwd, "-T", listPath], {
+    // Null-terminated + --null keeps dash-leading paths (e.g. --help.txt) verbatim.
+    await writeFile(listPath, `${files.join("\0")}\0`, "utf8");
+    await execFileAsync("tar", ["-czf", archivePath, "-C", options.cwd, "--null", "-T", listPath], {
       maxBuffer: 32 * 1024 * 1024,
     });
     const { size } = await stat(archivePath);
@@ -73,11 +77,12 @@ async function uploadAndExtract(options: SyncOptions, files: string[]): Promise<
 
 async function removeRemotePaths(sandbox: SandboxSession, paths: string[], timeoutSeconds: number): Promise<void> {
   // Batch deletes to avoid giant command lines; paths are shell-quoted.
+  // Use rm -rf so a deleted file path can be replaced by a directory on extract.
   const batchSize = 50;
   for (let index = 0; index < paths.length; index += batchSize) {
     const batch = paths.slice(index, index + batchSize);
     const quoted = batch.map((path) => shellQuote(`repo/${path}`)).join(" ");
-    const result = await sandbox.run(`rm -f ${quoted}`, ".", timeoutSeconds);
+    const result = await sandbox.run(`rm -rf ${quoted}`, ".", timeoutSeconds);
     if (result.exitCode !== 0) {
       throw new Error(`Worktree sync delete failed: ${result.stderr || result.stdout || `exit ${result.exitCode}`}`);
     }
@@ -136,10 +141,11 @@ export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): P
     }
   }
 
-  // Only remove paths actually absent from the worktree (skip `git rm --cached`).
+  // Skip only when a regular file still exists (`git rm --cached`).
+  // Absent paths and file→directory swaps still need remote removal.
   const deleted: string[] = [];
   for (const path of [...paths].sort()) {
-    if (!(await pathExists(join(cwd, path)))) {
+    if (!(await isPresentFile(join(cwd, path)))) {
       deleted.push(path);
     }
   }
@@ -168,6 +174,15 @@ async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+async function isPresentFile(path: string): Promise<boolean> {
+  try {
+    const info: FsStat = await stat(path);
+    return info.isFile();
   } catch {
     return false;
   }

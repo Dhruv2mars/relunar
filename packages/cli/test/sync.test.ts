@@ -34,7 +34,8 @@ describe("worktree sync", () => {
     try {
       initRepo(cwd);
       await writeFile(join(cwd, "probe.sh"), "echo hi\n", "utf8");
-      execFileSync("git", ["add", "probe.sh"], { cwd });
+      await writeFile(join(cwd, "--dash.txt"), "dash\n", "utf8");
+      execFileSync("git", ["add", "probe.sh", "--", "--dash.txt"], { cwd });
 
       const sandbox = new RecordingSandbox();
       const result = await syncWorktree({
@@ -45,12 +46,42 @@ describe("worktree sync", () => {
         timeoutSeconds: 30,
       });
 
-      expect(result.fileCount).toBe(1);
+      expect(result.fileCount).toBe(2);
       expect(result.deletedCount).toBe(0);
       expect(result.archiveBytes).toBeGreaterThan(0);
       expect(sandbox.uploads).toHaveLength(1);
       expect(sandbox.uploads[0]?.remotePath).toBe("/tmp/relunar-worktree-sync.tgz");
       expect(sandbox.commands.some((command) => command.includes("tar -xzf"))).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("syncWorktree deletes remote paths before extract for file-to-directory swaps", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-swap-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "foo"), "file\n", "utf8");
+      execFileSync("git", ["add", "foo"], { cwd });
+      commit(cwd, "init");
+      await rm(join(cwd, "foo"));
+      await mkdir(join(cwd, "foo"), { recursive: true });
+      await writeFile(join(cwd, "foo", "bar.ts"), "export {}\n", "utf8");
+      execFileSync("git", ["add", "-A"], { cwd });
+
+      const sandbox = new RecordingSandbox();
+      await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+
+      const deleteIndex = sandbox.commands.findIndex((command) => command.includes("rm -rf") && command.includes("repo/foo"));
+      const extractIndex = sandbox.commands.findIndex((command) => command.includes("tar -xzf"));
+      expect(deleteIndex).toBeGreaterThanOrEqual(0);
+      expect(extractIndex).toBeGreaterThan(deleteIndex);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -80,7 +111,7 @@ describe("worktree sync", () => {
 
       expect(result.fileCount).toBe(1);
       expect(result.deletedCount).toBe(1);
-      expect(sandbox.commands.some((command) => command.includes("rm -f") && command.includes("repo/gone.ts"))).toBe(true);
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/gone.ts"))).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -125,7 +156,7 @@ describe("worktree sync", () => {
       });
 
       expect(result.deletedCount).toBe(1);
-      expect(sandbox.commands.some((command) => command.includes("rm -f") && command.includes("repo/staged-gone.ts"))).toBe(true);
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/staged-gone.ts"))).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
