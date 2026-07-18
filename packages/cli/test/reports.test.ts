@@ -91,6 +91,14 @@ describe("reports", () => {
     expect(markdown).not.toContain("Evidence: issue-specific");
     expect(isFinalizedRepro({ ...report, status: "environment_ready" })).toBe(false);
     expect(isFinalizedRepro({ ...report, commands: [] })).toBe(false);
+    expect(
+      isFinalizedRepro({
+        ...report,
+        status: "blocked",
+        summary: "Sandbox image missing rustc.",
+        commands: [],
+      }),
+    ).toBe(true);
   });
 
   test("includes agent repro steps when supplied and does not invent them from logs", () => {

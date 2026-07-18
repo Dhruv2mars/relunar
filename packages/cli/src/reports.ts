@@ -46,11 +46,17 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
 }
 
 export function isFinalizedRepro(report: RunReport): boolean {
-  return (
-    (report.status === "reproduced" || report.status === "not_reproduced" || report.status === "blocked") &&
-    Boolean(report.summary?.trim()) &&
-    report.commands.some((command) => command.name === "repro")
-  );
+  if (report.status !== "reproduced" && report.status !== "not_reproduced" && report.status !== "blocked") {
+    return false;
+  }
+  if (!report.summary?.trim()) {
+    return false;
+  }
+  // Blocked may finish without probe evidence (environment/setup blockers).
+  if (report.status === "blocked") {
+    return true;
+  }
+  return report.commands.some((command) => command.name === "repro");
 }
 
 export function hasIssueProbeEvidence(report: RunReport): boolean {

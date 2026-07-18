@@ -170,9 +170,14 @@ export async function syncRepro(input: {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
   const sandbox = await resumeAndTouch(input.sandboxProvider, report, config);
-  report.commands.push(await recordSync(input.cwd, sandbox, config, input.includeUntracked));
+  const syncEvidence = await recordSync(input.cwd, sandbox, config, input.includeUntracked);
+  report.commands.push(syncEvidence);
   report.finishedAt = new Date().toISOString();
-  return await persistRun(input.cwd, report, config.report.maxLogLines);
+  const persisted = await persistRun(input.cwd, report, config.report.maxLogLines);
+  if (syncEvidence.status === "failed") {
+    throw new Error(`Worktree sync failed: ${syncEvidence.stderr || "unknown error"}`);
+  }
+  return persisted;
 }
 
 export async function uploadReproFile(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {

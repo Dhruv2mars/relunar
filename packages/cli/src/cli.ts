@@ -347,7 +347,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       command: shellCommand(passthrough),
       sandboxProvider: provider,
       sync: flagBoolean(flags, "sync"),
-      includeUntracked: flagBoolean(flags, "include-untracked"),
+      includeUntracked: optionalTrueFlag(flags, "include-untracked"),
     });
 
     if (wantFinish) {
@@ -380,7 +380,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       command: shellCommand(passthrough),
       sandboxProvider: provider,
       sync: flagBoolean(flags, "sync"),
-      includeUntracked: flagBoolean(flags, "include-untracked"),
+      includeUntracked: optionalTrueFlag(flags, "include-untracked"),
     });
   } else if (action === "sync") {
     if (!args[1]) {
@@ -391,7 +391,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       cwd: deps.cwd,
       runId: args[1],
       sandboxProvider: provider,
-      includeUntracked: flagBoolean(flags, "include-untracked"),
+      includeUntracked: optionalTrueFlag(flags, "include-untracked"),
     });
   } else if (action === "upload") {
     if (!args[1] || !args[2] || !args[3]) {
@@ -456,6 +456,11 @@ function parseOutcome(value: string | undefined): ReproOutcome | null {
   if (value === "reproduced" || value === "blocked") return value;
   if (value === "not-reproduced") return "not_reproduced";
   return null;
+}
+
+/** True only when the flag is explicitly set; otherwise undefined so config defaults apply. */
+function optionalTrueFlag(flags: Record<string, string | boolean>, name: string): true | undefined {
+  return flagBoolean(flags, name) ? true : undefined;
 }
 
 /** Agent-authored narrative for maintainer comments. Relunar formats; does not invent steps. */
