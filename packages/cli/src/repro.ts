@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseRelunarConfig, defaultRelunarConfig } from "./config";
-import { redactSecret } from "./reports";
+import { redactSecret, withAgentNextStep } from "./reports";
 import { createRunId, readRun, writeRun } from "./runs";
 import type { CommandEvidence, Issue, RelunarConfig, RepoSlug, ReproOutcome, RunReport, SandboxProvider, SandboxSession } from "./types";
 
@@ -134,8 +134,7 @@ export async function execRepro(input: { cwd: string; runId: string; command: st
     }),
   );
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
 }
 
 export async function uploadReproFile(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
@@ -154,8 +153,7 @@ export async function uploadReproFile(input: { cwd: string; runId: string; local
     stderr: "",
   });
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
 }
 
 export async function finishRepro(input: { cwd: string; runId: string; outcome: ReproOutcome; summary: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
@@ -174,8 +172,7 @@ export async function finishRepro(input: { cwd: string; runId: string; outcome: 
   report.summary = summary;
   report.failure = input.outcome === "blocked" ? summary : null;
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
 }
 
 export async function abortRepro(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
@@ -185,8 +182,7 @@ export async function abortRepro(input: { cwd: string; runId: string; sandboxPro
   await sandbox.dispose();
   report.status = "aborted";
   report.finishedAt = new Date().toISOString();
-  await writeRun(input.cwd, report, config.report.maxLogLines);
-  return report;
+  return await persistRun(input.cwd, report, config.report.maxLogLines);
 }
 
 async function requireReadyRun(cwd: string, runId: string): Promise<RunReport> {
@@ -240,12 +236,14 @@ async function finish(
   failure: string | null,
   config: RelunarConfig,
 ): Promise<RunReport> {
-  const report: RunReport = {
+  const report = withAgentNextStep({
     runId,
     status,
     issue: {
       number: input.issue.number,
       title: input.issue.title,
+      body: input.issue.body,
+      state: input.issue.state,
       url: input.issue.url,
     },
     repo: input.repo,
@@ -258,12 +256,19 @@ async function finish(
     commands,
     failure,
     summary: null,
+    nextStep: "",
     startedAt,
     finishedAt: new Date().toISOString(),
-  };
+  });
 
   await writeRun(input.cwd, report, config.report.maxLogLines);
   return report;
+}
+
+async function persistRun(cwd: string, report: RunReport, maxLogLines: number): Promise<RunReport> {
+  const next = withAgentNextStep(report);
+  await writeRun(cwd, next, maxLogLines);
+  return next;
 }
 
 function lastFailed(commands: CommandEvidence[]): boolean {

@@ -62,6 +62,8 @@ export type RunReport = {
   issue: {
     number: number;
     title: string;
+    body: string;
+    state: "open" | "closed";
     url: string;
   };
   repo: RepoSlug;
@@ -74,6 +76,8 @@ export type RunReport = {
   commands: CommandEvidence[];
   failure: string | null;
   summary?: string | null | undefined;
+  /** Agent-facing hint. environment_ready means probing is still required. */
+  nextStep: string;
   startedAt: string;
   finishedAt: string;
 };

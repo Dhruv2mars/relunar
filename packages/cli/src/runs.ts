@@ -62,6 +62,11 @@ export async function readRun(cwd: string, runId: string): Promise<RunReport> {
   }
 }
 
+export async function findActiveRunForIssue(cwd: string, issueNumber: number): Promise<RunReport | null> {
+  const runs = await listRuns(cwd);
+  return runs.find((run) => run.issue.number === issueNumber && run.status === "environment_ready") ?? null;
+}
+
 function renderLogs(commands: CommandEvidence[]): string {
   return commands
     .map((command) => {
