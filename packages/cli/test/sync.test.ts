@@ -188,7 +188,7 @@ describe("worktree sync", () => {
 
       const sandbox = new RecordingSandbox();
       // Later sync without --include-untracked must not wipe the earlier upload.
-      await syncWorktree({
+      const result = await syncWorktree({
         cwd,
         sandbox,
         includeUntracked: false,
@@ -198,6 +198,9 @@ describe("worktree sync", () => {
       });
 
       expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/repro.ts"))).toBe(false);
+      // Manifest must retain repro.ts so a later local delete can still clean the sandbox.
+      expect(result.syncedPaths).toContain("repro.ts");
+      expect(result.syncedPaths).toContain("keep.ts");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

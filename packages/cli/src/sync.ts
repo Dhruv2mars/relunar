@@ -36,22 +36,25 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
   const deleted = (await listDeletedTrackedFiles(options.cwd, exclude)).filter((path) => !gitlinks.has(path));
   // Prior sync-manifest paths that disappeared locally. Keep remote copies when the local
   // leaf still exists (e.g. untracked repro script uploaded earlier, later `--sync` without
-  // `--include-untracked`). Do not infer removals from sandbox `git ls-files` vs local —
-  // sparse/skip-worktree checkouts omit cones that still belong in the full sandbox clone.
+  // `--include-untracked`), and retain those paths in syncedPaths so a later local delete
+  // can still stale-clean the sandbox. Do not infer removals from sandbox `git ls-files`.
   const stale: string[] = [];
+  const retained: string[] = [];
   for (const path of options.previouslySyncedPaths ?? []) {
     if (files.includes(path) || deleted.includes(path) || gitlinks.has(path)) {
       continue;
     }
     if (await isPresentLeaf(join(options.cwd, path))) {
+      retained.push(path);
       continue;
     }
     stale.push(path);
   }
   const removed = [...new Set([...deleted, ...stale])].sort();
+  const syncedPaths = [...new Set([...files, ...retained])].sort();
 
   if (files.length === 0 && removed.length === 0) {
-    return { fileCount: 0, deletedCount: 0, archiveBytes: 0, syncedPaths: [] };
+    return { fileCount: 0, deletedCount: 0, archiveBytes: 0, syncedPaths };
   }
 
   // Clear deleted / stale paths and present paths before extract so
@@ -67,7 +70,7 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
     archiveBytes = await uploadAndExtract(options, files);
   }
 
-  return { fileCount: files.length, deletedCount: removed.length, archiveBytes, syncedPaths: files };
+  return { fileCount: files.length, deletedCount: removed.length, archiveBytes, syncedPaths };
 }
 
 export function mergeExclude(configured: string[]): string[] {
