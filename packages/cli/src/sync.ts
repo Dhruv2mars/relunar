@@ -36,7 +36,17 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
   const deleted = await listDeletedTrackedFiles(options.cwd, exclude);
   const stale = (options.previouslySyncedPaths ?? []).filter((path) => !files.includes(path) && !deleted.includes(path));
   const remoteTracked = await listRemoteTrackedFiles(options.sandbox, options.timeoutSeconds);
-  const remoteOnly = remoteTracked.filter((path) => !files.includes(path) && !isExcluded(path, exclude));
+  const remoteOnly: string[] = [];
+  for (const path of remoteTracked) {
+    if (files.includes(path) || isExcluded(path, exclude)) {
+      continue;
+    }
+    // Keep sandbox copies of files still on disk locally (e.g. `git rm --cached`).
+    if (await pathExists(join(options.cwd, path))) {
+      continue;
+    }
+    remoteOnly.push(path);
+  }
   const removed = [...new Set([...deleted, ...stale, ...remoteOnly])].sort();
 
   if (files.length === 0 && removed.length === 0) {

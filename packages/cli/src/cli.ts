@@ -287,6 +287,12 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
 
   const legacyIssueNumber = parseIssueNumber(args[0]);
   const isOneShot = legacyIssueNumber !== null && passthrough.length > 0;
+  if (legacyIssueNumber !== null && flagBoolean(flags, "finish") && passthrough.length === 0) {
+    deps.io.stderr(
+      "Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> -- <probe-command>\n",
+    );
+    return 1;
+  }
   const action = isOneShot ? "oneshot" : legacyIssueNumber !== null ? "start" : args[0];
   if (!action || !["oneshot", "start", "exec", "upload", "sync", "finish", "abort"].includes(action)) {
     deps.io.stderr("Usage: relunar repro <issue-number> [--sync] [-- <probe-command>] | start|exec|upload|sync|finish|abort\n");

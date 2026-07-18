@@ -185,6 +185,17 @@ describe("worktree sync", () => {
 
       expect(await listDeletedTrackedFiles(cwd, [])).toEqual([]);
       expect(await listWorktreeFiles(cwd, true, [])).toContain("kept-on-disk.ts");
+
+      const sandbox = new RecordingSandbox();
+      sandbox.remoteTracked = "kept-on-disk.ts\0";
+      await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/kept-on-disk.ts"))).toBe(false);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

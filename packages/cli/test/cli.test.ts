@@ -274,6 +274,23 @@ describe("cli", () => {
     }
   });
 
+  test("finish without a probe command does not fall through to start", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-finish-no-probe-"));
+    try {
+      const output = await invoke(
+        ["repro", "12", "--finish", "--outcome", "reproduced", "--summary", "claimed"],
+        dir,
+        { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_SKIP_GH_AUTH_TOKEN: "1" },
+      );
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Usage: relunar repro <issue-number> --finish --outcome");
+      expect(output.stderr).toContain("-- <probe-command>");
+      expect(output.stderr).not.toContain("No repo linked");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("commands reject flags that require missing values", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-flag-values-"));
     try {
