@@ -3,7 +3,14 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { isExcluded, listDeletedTrackedFiles, listGitlinkPaths, listWorktreeFiles, mergeExclude, syncWorktree } from "../src/sync";
+import {
+  isExcluded,
+  listDeletedTrackedFiles,
+  listGitlinkPaths,
+  listWorktreeFiles,
+  mergeExclude,
+  syncWorktree,
+} from "../src/sync";
 import type { SandboxExecResult, SandboxSession } from "../src/types";
 
 describe("worktree sync", () => {
@@ -48,7 +55,6 @@ describe("worktree sync", () => {
       expect(await listDeletedTrackedFiles(cwd, [])).toEqual([]);
 
       const sandbox = new RecordingSandbox();
-      sandbox.remoteTracked = "link\0";
       const result = await syncWorktree({
         cwd,
         sandbox,
@@ -76,7 +82,6 @@ describe("worktree sync", () => {
       expect((await listGitlinkPaths(cwd)).has("vendor/lib")).toBe(true);
 
       const sandbox = new RecordingSandbox();
-      sandbox.remoteTracked = "keep.ts\0vendor/lib\0";
       await syncWorktree({
         cwd,
         sandbox,
@@ -90,16 +95,21 @@ describe("worktree sync", () => {
     }
   });
 
-  test("removes sandbox-tracked files absent from the local worktree", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-remote-only-"));
+  test("does not delete sandbox files omitted by sparse checkout", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-sparse-"));
     try {
       initRepo(cwd);
+      await mkdir(join(cwd, "src"), { recursive: true });
       await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
-      execFileSync("git", ["add", "keep.ts"], { cwd });
+      await writeFile(join(cwd, "src", "deep.ts"), "deep\n", "utf8");
+      execFileSync("git", ["add", "keep.ts", "src/deep.ts"], { cwd });
       commit(cwd, "init");
+      execFileSync("git", ["sparse-checkout", "init", "--cone"], { cwd });
+      execFileSync("git", ["sparse-checkout", "set", "."], { cwd });
+      // Cone root keeps top-level files; src/deep.ts is absent locally but still tracked.
+      expect(await listDeletedTrackedFiles(cwd, [])).not.toContain("src/deep.ts");
 
       const sandbox = new RecordingSandbox();
-      sandbox.remoteTracked = "keep.ts\0stale-from-clone.ts\0";
       await syncWorktree({
         cwd,
         sandbox,
@@ -108,7 +118,7 @@ describe("worktree sync", () => {
         timeoutSeconds: 30,
       });
 
-      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/stale-from-clone.ts"))).toBe(true);
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/src/deep.ts"))).toBe(false);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -179,8 +189,6 @@ describe("worktree sync", () => {
       execFileSync("git", ["add", "-A"], { cwd });
 
       const sandbox = new RecordingSandbox();
-      // Sandbox clone still has the old file path even though local tree is a directory.
-      sandbox.remoteTracked = "foo\0";
       await syncWorktree({
         cwd,
         sandbox,
@@ -243,7 +251,6 @@ describe("worktree sync", () => {
       expect(await listWorktreeFiles(cwd, true, [])).toContain("kept-on-disk.ts");
 
       const sandbox = new RecordingSandbox();
-      sandbox.remoteTracked = "kept-on-disk.ts\0";
       await syncWorktree({
         cwd,
         sandbox,
@@ -300,13 +307,9 @@ class RecordingSandbox implements SandboxSession {
   readonly target = "test";
   readonly uploads: Array<{ localPath: string; remotePath: string }> = [];
   readonly commands: string[] = [];
-  remoteTracked = "";
 
   async run(command: string): Promise<SandboxExecResult> {
     this.commands.push(command);
-    if (command.includes("git ls-files")) {
-      return { exitCode: 0, stdout: this.remoteTracked, stderr: "", timedOut: false };
-    }
     return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
   }
 

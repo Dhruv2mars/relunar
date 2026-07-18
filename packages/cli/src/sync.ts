@@ -34,29 +34,19 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
   const files = await listWorktreeFiles(options.cwd, options.includeUntracked, exclude);
   // Gitlinks without a checkout appear in `ls-files --deleted` — never treat as removals.
   const deleted = (await listDeletedTrackedFiles(options.cwd, exclude)).filter((path) => !gitlinks.has(path));
+  // Only confirmed local deletions + prior sync-manifest paths. Do not infer removals from
+  // sandbox `git ls-files` vs local — sparse/skip-worktree checkouts omit cones that still
+  // exist (and must stay) in the full sandbox clone.
   const stale = (options.previouslySyncedPaths ?? []).filter(
     (path) => !files.includes(path) && !deleted.includes(path) && !gitlinks.has(path),
   );
-  const remoteTracked = await listRemoteTrackedFiles(options.sandbox, options.timeoutSeconds);
-  const remoteOnly: string[] = [];
-  for (const path of remoteTracked) {
-    if (files.includes(path) || isExcluded(path, exclude) || gitlinks.has(path)) {
-      continue;
-    }
-    // Keep sandbox copies of local files/symlinks (e.g. `git rm --cached`).
-    // Directories must not skip — a remote file may need clearing for file→dir swaps.
-    if (await isPresentLeaf(join(options.cwd, path))) {
-      continue;
-    }
-    remoteOnly.push(path);
-  }
-  const removed = [...new Set([...deleted, ...stale, ...remoteOnly])].sort();
+  const removed = [...new Set([...deleted, ...stale])].sort();
 
   if (files.length === 0 && removed.length === 0) {
     return { fileCount: 0, deletedCount: 0, archiveBytes: 0, syncedPaths: [] };
   }
 
-  // Clear remote-only / deleted / stale paths and present paths before extract so
+  // Clear deleted / stale paths and present paths before extract so
   // file↔directory swaps succeed even when leftover files keep a remote directory alive.
   // Never rm -rf submodule gitlink directories.
   const remoteClear = [...new Set([...removed, ...files])].filter((path) => !gitlinks.has(path)).sort();
@@ -120,15 +110,6 @@ export async function listGitlinkPaths(cwd: string): Promise<Set<string>> {
     }
   }
   return links;
-}
-
-async function listRemoteTrackedFiles(sandbox: SandboxSession, timeoutSeconds: number): Promise<string[]> {
-  const result = await sandbox.run("git ls-files -z", "repo", timeoutSeconds);
-  if (result.exitCode !== 0) {
-    // Fresh/broken clones may not have a git index yet; treat as empty.
-    return [];
-  }
-  return result.stdout.split("\0").filter((path) => path.length > 0);
 }
 
 async function removeRemotePaths(sandbox: SandboxSession, paths: string[], timeoutSeconds: number): Promise<void> {
