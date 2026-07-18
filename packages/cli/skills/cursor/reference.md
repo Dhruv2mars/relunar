@@ -37,7 +37,7 @@ bunx @dhruv2mars/relunar
 - Supply maintainer prose: `--summary` (required), plus `--repro-steps`, `--observed`, `--expected`, `--environment` when known.
 - Outcomes: `reproduced` | `not-reproduced` | `blocked`.
 - Evidence required before finish; baseline/setup output is not Evidence.
-- Default gate: `reproduced` needs at least one `repro` command with stdout/stderr. Stricter gates live in `.relunar.yml` `evidence:`.
+- Default gate: `reproduced` needs a `repro` command that fails, times out, or produces stdout/stderr. Stricter gates live in `.relunar.yml` `evidence:`.
 - Sandbox stays warm until finish/abort; idle TTL is `sandbox.autoStopMinutes` (default 60). Prefer `--sync` when you edited files locally.
 
 ## Sync

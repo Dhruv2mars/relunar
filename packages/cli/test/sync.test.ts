@@ -153,6 +153,8 @@ describe("worktree sync", () => {
       execFileSync("git", ["add", "-A"], { cwd });
 
       const sandbox = new RecordingSandbox();
+      // Sandbox clone still has the old file path even though local tree is a directory.
+      sandbox.remoteTracked = "foo\0";
       await syncWorktree({
         cwd,
         sandbox,

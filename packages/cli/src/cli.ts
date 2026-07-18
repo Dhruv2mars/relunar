@@ -630,7 +630,7 @@ Agent workflow:
 
   Sandbox stays warm until finish/abort. Idle auto-stop defaults to 60m (sandbox.autoStopMinutes).
   Sync dirty local edits with --sync or sync.onExec in .relunar.yml.
-  Finish enforces evidence gates (reproduced requires probe output by default).
+  Finish enforces evidence gates (reproduced requires fail/timeout or probe output by default).
 
   environment_ready means the sandbox is ready — not that the issue was reproduced.
   Put finish flags before \`--\` when combining with one-shot:

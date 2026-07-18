@@ -18,6 +18,7 @@ describe("cli", () => {
     expect(output.stdout).toContain("Agent workflow");
     expect(output.stdout).toContain("environment_ready means the sandbox is ready");
     expect(output.stdout).toContain("Sandbox stays warm until finish/abort");
+    expect(output.stdout).toContain("fail/timeout or probe output");
     expect(output.stdout).toContain("Machine setup");
   });
 

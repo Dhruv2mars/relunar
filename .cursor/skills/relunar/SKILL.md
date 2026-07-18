@@ -57,7 +57,7 @@ For each issue number `N`:
 1. **Start** — `relunar repro start N` (or one-shot `relunar repro N -- <probe>`). Sandbox ready ≠ Evidence.
 2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload`), then `repro exec` / one-shot probes until you have issue-specific Evidence (or a clear block).
 3. **Inspect** — `relunar runs show <run-id> --json` when deciding the outcome.
-4. **Finish** — exactly one outcome: `reproduced` | `not-reproduced` | `blocked`. Finish rejects soft claims (e.g. empty probe output for `reproduced`).
+4. **Finish** — exactly one outcome: `reproduced` | `not-reproduced` | `blocked`. Finish rejects soft claims (e.g. a passing empty probe for `reproduced`).
 
 ```sh
 relunar repro finish <run-id> \

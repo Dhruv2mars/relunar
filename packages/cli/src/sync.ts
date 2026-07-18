@@ -39,8 +39,9 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
     if (files.includes(path) || isExcluded(path, exclude)) {
       continue;
     }
-    // Keep sandbox copies of files still on disk locally (e.g. `git rm --cached`).
-    if (await pathExists(join(options.cwd, path))) {
+    // Keep sandbox copies of local files/symlinks (e.g. `git rm --cached`).
+    // Directories must not skip — a remote file may need clearing for file→dir swaps.
+    if (await isPresentLeaf(join(options.cwd, path))) {
       continue;
     }
     remoteOnly.push(path);
