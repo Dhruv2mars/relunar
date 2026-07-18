@@ -147,33 +147,41 @@ export async function listWorktreeFiles(cwd: string, includeUntracked: boolean, 
 }
 
 /**
- * Files present in HEAD but absent from the worktree (unstaged `rm` or staged `git rm`).
- * Prefer diff-against-HEAD so staged removals are included; `ls-files --deleted` only
- * covers unstaged deletions still listed in the index.
+ * Paths that should be removed from the sandbox: deletions and rename/copy sources
+ * relative to HEAD, plus unstaged `ls-files --deleted` entries.
  */
 export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): Promise<string[]> {
   const paths = new Set<string>();
-  const commands = [
-    ["-C", cwd, "diff", "--name-only", "-z", "--diff-filter=D", "HEAD"],
-    ["-C", cwd, "ls-files", "-z", "--deleted"],
-  ];
-  for (const args of commands) {
-    try {
-      const { stdout } = await execFileAsync("git", args, {
-        encoding: "utf8",
-        maxBuffer: 32 * 1024 * 1024,
-      });
-      for (const path of stdout.split("\0")) {
-        if (path.length > 0 && !isExcluded(path, exclude)) {
-          paths.add(path);
-        }
-      }
-    } catch (error) {
-      // No HEAD (empty repo) — fall through; ls-files --deleted still applies.
-      if (!isNoHeadError(error)) {
-        throw error;
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["-C", cwd, "diff", "--name-status", "-z", "--diff-filter=DRC", "HEAD"],
+      { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+    );
+    for (const path of parseNameStatusRemovals(stdout)) {
+      if (!isExcluded(path, exclude)) {
+        paths.add(path);
       }
     }
+  } catch (error) {
+    // No HEAD (empty repo) — fall through; ls-files --deleted still applies.
+    if (!isNoHeadError(error)) {
+      throw error;
+    }
+  }
+
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", cwd, "ls-files", "-z", "--deleted"], {
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    for (const path of stdout.split("\0")) {
+      if (path.length > 0 && !isExcluded(path, exclude)) {
+        paths.add(path);
+      }
+    }
+  } catch {
+    // Ignore — empty / non-git edge cases handled by caller.
   }
 
   // Skip when a file or symlink still exists (`git rm --cached`, dangling links).
@@ -185,6 +193,35 @@ export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): P
     }
   }
   return deleted;
+}
+
+/** Parse `git diff --name-status -z` and collect delete/rename/copy source paths. */
+export function parseNameStatusRemovals(stdout: string): string[] {
+  const tokens = stdout.split("\0").filter((token) => token.length > 0);
+  const paths: string[] = [];
+  for (let index = 0; index < tokens.length; ) {
+    const status = tokens[index] ?? "";
+    index += 1;
+    if (status.startsWith("R") || status.startsWith("C")) {
+      const source = tokens[index];
+      index += 2; // skip source + destination
+      if (source) {
+        paths.push(source);
+      }
+      continue;
+    }
+    if (status.startsWith("D")) {
+      const path = tokens[index];
+      index += 1;
+      if (path) {
+        paths.push(path);
+      }
+      continue;
+    }
+    // Unknown status token — skip one path field if present.
+    index += 1;
+  }
+  return paths;
 }
 
 function isNoHeadError(error: unknown): boolean {

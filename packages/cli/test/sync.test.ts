@@ -9,6 +9,7 @@ import {
   listGitlinkPaths,
   listWorktreeFiles,
   mergeExclude,
+  parseNameStatusRemovals,
   syncWorktree,
 } from "../src/sync";
 import type { SandboxExecResult, SandboxSession } from "../src/types";
@@ -90,6 +91,34 @@ describe("worktree sync", () => {
         timeoutSeconds: 30,
       });
       expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/vendor/lib"))).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("removes rename source paths after git mv", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-rename-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "old.ts"), "export {}\n", "utf8");
+      execFileSync("git", ["add", "old.ts"], { cwd });
+      commit(cwd, "init");
+      execFileSync("git", ["mv", "old.ts", "new.ts"], { cwd });
+
+      expect(await listDeletedTrackedFiles(cwd, [])).toEqual(["old.ts"]);
+      expect(parseNameStatusRemovals("R100\0old.ts\0new.ts\0")).toEqual(["old.ts"]);
+
+      const sandbox = new RecordingSandbox();
+      await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/old.ts"))).toBe(true);
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/new.ts"))).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
