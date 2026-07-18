@@ -9,6 +9,8 @@ relunar
 
 Relunar is a harness, not an agent. Codex, Cursor, Claude Code, or a human decides what to run. Relunar handles GitHub issue reads, Daytona sandbox creation, repo clone, configured commands, logs, reports, cleanup, and optional issue comments.
 
+Agents are the primary end users. Humans set up auth and config; agents drive list → probe → finish.
+
 ## First-Time Workflow
 
 Machine setup once:
@@ -27,32 +29,34 @@ relunar repo link owner/repo
 relunar doctor
 ```
 
-Daily use:
-
-```sh
-relunar issues list --state open
-relunar repro start 123
-relunar repro exec <run-id> -- <command>
-relunar repro finish <run-id> --outcome reproduced --summary "Observed issue behavior."
-relunar runs list
-relunar runs show <run-id>
-```
-
-Agent use:
+## Agent workflow
 
 ```sh
 relunar doctor --json
 relunar issues list --state open --limit 20 --json
+
+# One-shot: start (or resume an active run), run a probe, leave sandbox warm
+relunar repro 123 -- bun test path/to/repro.ts
+
+# Or multi-step lifecycle
 relunar repro start 123
-relunar repro exec <run-id> -- <command>
+relunar repro upload <run-id> ./repro.ts repo/repro.ts
+relunar repro exec <run-id> -- bun repro.ts
 relunar runs show <run-id> --json
+
+# Agent judges outcome from probe evidence (environment_ready ≠ reproduced)
+relunar repro finish <run-id> --outcome reproduced --summary "Observed issue behavior."
 ```
 
-Post a GitHub issue comment only when explicit:
+Optional one-shot finish (flags before `--`):
 
 ```sh
-relunar repro finish <run-id> --outcome reproduced --summary "Observed issue behavior." --comment
+relunar repro 123 --finish --outcome reproduced --summary "Observed issue behavior." --comment -- bun repro.ts
 ```
+
+Post a GitHub issue comment only when explicit (`--comment` on finish).
+
+`environment_ready` means the sandbox is ready for probing — not that the bug was reproduced. Run reports include `issue.body`, `nextStep`, and command evidence so agents can plan the next probe from harness JSON.
 
 ## Repository Config
 
@@ -81,7 +85,7 @@ report:
   maxLogLines: 200
 ```
 
-`setup` installs dependencies. `baseline` verifies environment readiness. `repro start` keeps the sandbox alive; `repro upload` and `repro exec` capture issue-specific evidence; `repro finish` requires evidence and a summary before it can comment and clean up. Set `sandbox.image` when the repo needs a runtime different from Daytona's default image. `sandbox.resources` requires an image and sets CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
+`setup` installs dependencies. `baseline` verifies environment readiness. `repro start` / one-shot keep the sandbox alive; `repro upload` and `repro exec` capture issue-specific evidence; `repro finish` requires probe evidence and a summary before it can comment and clean up. Final outcomes are only `reproduced`, `not-reproduced`, or `blocked`. Set `sandbox.image` when the repo needs a runtime different from Daytona's default image. `sandbox.resources` requires an image and sets CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
 
 ```txt
 .relunar/runs/<run-id>/
@@ -130,6 +134,8 @@ relunar auth github [--token <token>]
 relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
 relunar repo link owner/repo
 relunar issues list [--state open|closed|all] [--limit N] [--json]
+relunar repro <issue-number> -- <probe-command>
+relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--comment] -- <probe-command>
 relunar repro start <issue-number>
 relunar repro exec <run-id> -- <command>
 relunar repro upload <run-id> <local-path> <remote-path>
