@@ -5,11 +5,13 @@ This file is a map, not a dump of help text.
 
 ## Binary
 
-Prefer bun. Local feat-branch build when global is stale:
+Prefer bun. When global `relunar` is stale:
 
 ```sh
-bun /Users/dhruv2mars/dev/github/relunar/packages/cli/dist/index.js
-# rebuild: cd …/packages/cli && bun run build
+# from a Relunar checkout
+cd packages/cli && bun run build && bun ./dist/index.js
+# or published package
+bunx @dhruv2mars/relunar
 ```
 
 ## Lifecycle map

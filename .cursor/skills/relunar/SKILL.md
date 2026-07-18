@@ -11,13 +11,11 @@ description: >-
 
 Relunar is the **harness**. You are the agent: pick issues, invent probes, judge Evidence, write the Finish narrative.
 
-Prefer `bun`. If global `relunar` is stale, use the local build:
+Prefer `bun`. Binary resolution order:
 
-```sh
-bun /Users/dhruv2mars/dev/github/relunar/packages/cli/dist/index.js <args>
-```
-
-(Alias that path as `relunar` below. Rebuild with `bun run build` in `packages/cli` when needed.)
+1. `relunar` on PATH (global install)
+2. From a Relunar checkout: `cd packages/cli && bun run build && bun ./dist/index.js <args>`
+3. Published package: `bunx @dhruv2mars/relunar <args>`
 
 Command details live in [`reference.md`](reference.md) and `relunar <cmd> --help`. Read reference when a flag or subcommand is unclear.
 

@@ -61,7 +61,10 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       target: sandbox.target ?? this.options.target ?? null,
       run: async (command, cwd, timeoutSeconds, env) => {
         try {
-          const result = await sandbox.process.executeCommand(command, cwd, env ?? {}, timeoutSeconds);
+          // Daytona's executeCommand exposes a single result stream; merge stderr so
+          // probe evidence and output gates see compiler/runtime failures.
+          const merged = `/bin/bash -lc ${shellQuote(`${command} 2>&1`)}`;
+          const result = await sandbox.process.executeCommand(merged, cwd, env ?? {}, timeoutSeconds);
           return {
             exitCode: result.exitCode,
             stdout: result.result ?? result.artifacts?.stdout ?? "",
@@ -100,4 +103,8 @@ function isTimeoutError(error: unknown): boolean {
     return false;
   }
   return /timeout|timed out/i.test(`${error.name} ${error.message}`);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }

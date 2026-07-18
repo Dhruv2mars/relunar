@@ -90,7 +90,11 @@ function isFailureSignal(command: CommandEvidence): boolean {
 }
 
 function hasProbeOutput(command: CommandEvidence): boolean {
-  return command.stdout.trim().length > 0 || command.stderr.trim().length > 0;
+  if (command.stdout.trim().length > 0 || command.stderr.trim().length > 0) {
+    return true;
+  }
+  // Providers that collapse stderr still leave a failure/timeout status as signal.
+  return command.status === "failed" || command.status === "timed_out";
 }
 
 function shellQuote(value: string): string {

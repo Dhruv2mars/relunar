@@ -34,6 +34,21 @@ describe("evidence gates", () => {
     await assertEvidenceGates(report, "reproduced", defaultRelunarConfig);
   });
 
+  test("reproduced accepts failing probe even when streams are empty", async () => {
+    const report = baseReport([
+      {
+        name: "repro",
+        command: "node -e 'throw new Error()'",
+        status: "failed",
+        exitCode: 1,
+        durationMs: 2,
+        stdout: "",
+        stderr: "",
+      },
+    ]);
+    await assertEvidenceGates(report, "reproduced", defaultRelunarConfig);
+  });
+
   test("requireNonZeroExit rejects all-passing probes", async () => {
     const config: RelunarConfig = {
       ...defaultRelunarConfig,

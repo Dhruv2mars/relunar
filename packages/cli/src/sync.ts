@@ -135,7 +135,15 @@ export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): P
       }
     }
   }
-  return [...paths].sort();
+
+  // Only remove paths actually absent from the worktree (skip `git rm --cached`).
+  const deleted: string[] = [];
+  for (const path of [...paths].sort()) {
+    if (!(await pathExists(join(cwd, path)))) {
+      deleted.push(path);
+    }
+  }
+  return deleted;
 }
 
 function isNoHeadError(error: unknown): boolean {

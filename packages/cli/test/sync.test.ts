@@ -86,6 +86,22 @@ describe("worktree sync", () => {
     }
   });
 
+  test("does not treat git rm --cached as a remote deletion", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-cached-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "kept-on-disk.ts"), "still here\n", "utf8");
+      execFileSync("git", ["add", "kept-on-disk.ts"], { cwd });
+      commit(cwd, "init");
+      execFileSync("git", ["rm", "--cached", "kept-on-disk.ts"], { cwd });
+
+      expect(await listDeletedTrackedFiles(cwd, [])).toEqual([]);
+      expect(await listWorktreeFiles(cwd, true, [])).toContain("kept-on-disk.ts");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("syncWorktree removes staged git rm deletions remotely", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-gitrm-"));
     try {
