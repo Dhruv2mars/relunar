@@ -347,14 +347,35 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       return 1;
     }
 
-    report = await execRepro({
-      cwd: deps.cwd,
-      runId: report.runId,
-      command: shellCommand(passthrough),
-      sandboxProvider: provider,
-      sync: flagBoolean(flags, "sync"),
-      includeUntracked: optionalTrueFlag(flags, "include-untracked"),
-    });
+    try {
+      report = await execRepro({
+        cwd: deps.cwd,
+        runId: report.runId,
+        command: shellCommand(passthrough),
+        sandboxProvider: provider,
+        sync: flagBoolean(flags, "sync"),
+        includeUntracked: optionalTrueFlag(flags, "include-untracked"),
+      });
+    } catch (error) {
+      // Active run pointed at a disposed/missing sandbox — start a fresh lifecycle once.
+      if (!active) {
+        throw error;
+      }
+      const issue = await client.getIssue(repo, issueNumber);
+      report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
+      if (report.status !== "environment_ready") {
+        printReport(deps, report);
+        return 1;
+      }
+      report = await execRepro({
+        cwd: deps.cwd,
+        runId: report.runId,
+        command: shellCommand(passthrough),
+        sandboxProvider: provider,
+        sync: flagBoolean(flags, "sync"),
+        includeUntracked: optionalTrueFlag(flags, "include-untracked"),
+      });
+    }
 
     if (wantFinish) {
       report = await finishRepro({

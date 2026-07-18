@@ -132,7 +132,9 @@ export async function listWorktreeFiles(cwd: string, includeUntracked: boolean, 
 
   const present: string[] = [];
   for (const path of candidates) {
-    if (await pathExists(join(cwd, path))) {
+    // Only upload leaves. A cached path that is now a local directory must not
+    // recurse into untracked children unless includeUntracked is enabled.
+    if (await isPresentLeaf(join(cwd, path))) {
       present.push(path);
     }
   }
@@ -196,15 +198,6 @@ export function isExcluded(path: string, exclude: string[]): boolean {
     }
     return normalized === needle || normalized.startsWith(`${needle}/`) || normalized.includes(`/${needle}/`);
   });
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await lstat(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function isPresentLeaf(path: string): Promise<boolean> {

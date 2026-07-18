@@ -134,7 +134,7 @@ export type ExecReproInput = {
 export async function execRepro(input: ExecReproInput): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await resumeAndTouch(input.sandboxProvider, report, config);
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
 
   const shouldSync = input.sync === true || config.sync?.onExec === true;
   if (shouldSync) {
@@ -169,7 +169,7 @@ export async function syncRepro(input: {
 }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await resumeAndTouch(input.sandboxProvider, report, config);
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const syncEvidence = await recordSync(input.cwd, report.runId, sandbox, config, input.includeUntracked);
   report.commands.push(syncEvidence);
   report.finishedAt = new Date().toISOString();
@@ -183,7 +183,7 @@ export async function syncRepro(input: {
 export async function uploadReproFile(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await resumeAndTouch(input.sandboxProvider, report, config);
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const started = Date.now();
   await sandbox.upload(input.localPath, input.remotePath);
   report.commands.push({
@@ -222,7 +222,7 @@ export async function finishRepro(
     throw new Error("Cannot finish repro without a summary.");
   }
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await resumeAndTouch(input.sandboxProvider, report, config);
+  const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
 
   await assertEvidenceGates(report, input.outcome, config, {
     skip: input.skipEvidenceGates === true,
@@ -251,8 +251,15 @@ function optionalText(value: string | undefined): string | null {
 export async function abortRepro(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
-  const sandbox = await resumeAndTouch(input.sandboxProvider, report, config);
-  await sandbox.dispose();
+  try {
+    const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
+    await sandbox.dispose();
+  } catch {
+    // Sandbox already gone; resumeAndTouch marks the run aborted when possible.
+    if (report.status === "aborted") {
+      return report;
+    }
+  }
   report.status = "aborted";
   report.finishedAt = new Date().toISOString();
   return await persistRun(input.cwd, report, config.report.maxLogLines);
@@ -273,13 +280,29 @@ function requireSandboxId(report: RunReport): string {
   return report.sandbox.id;
 }
 
-async function resumeAndTouch(provider: SandboxProvider, report: RunReport, config: RelunarConfig): Promise<SandboxSession> {
-  const sandbox = await provider.resumeSandbox(requireSandboxId(report));
-  const minutes = resolveAutoStopMinutes(config);
-  if (sandbox.touchIdle) {
-    await sandbox.touchIdle(minutes);
+async function resumeAndTouch(
+  cwd: string,
+  provider: SandboxProvider,
+  report: RunReport,
+  config: RelunarConfig,
+): Promise<SandboxSession> {
+  try {
+    const sandbox = await provider.resumeSandbox(requireSandboxId(report));
+    const minutes = resolveAutoStopMinutes(config);
+    if (sandbox.touchIdle) {
+      await sandbox.touchIdle(minutes);
+    }
+    return sandbox;
+  } catch (error) {
+    // Mark the run inactive so oneshot resume does not keep selecting a dead sandbox.
+    if (report.status === "environment_ready") {
+      report.status = "aborted";
+      report.failure = error instanceof Error ? error.message : String(error);
+      report.finishedAt = new Date().toISOString();
+      await persistRun(cwd, report, config.report.maxLogLines);
+    }
+    throw error;
   }
-  return sandbox;
 }
 
 async function recordSync(
