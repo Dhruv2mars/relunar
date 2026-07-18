@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { isExcluded, listDeletedTrackedFiles, listWorktreeFiles, syncWorktree } from "../src/sync";
+import { isExcluded, listDeletedTrackedFiles, listWorktreeFiles, mergeExclude, syncWorktree } from "../src/sync";
 import type { SandboxExecResult, SandboxSession } from "../src/types";
 
 describe("worktree sync", () => {
@@ -27,6 +27,37 @@ describe("worktree sync", () => {
     expect(isExcluded("node_modules/foo", ["node_modules"])).toBe(true);
     expect(isExcluded("src/node_modules/foo", ["node_modules"])).toBe(true);
     expect(isExcluded("src/main.ts", ["node_modules"])).toBe(false);
+  });
+
+  test("mergeExclude keeps built-ins when config adds paths", () => {
+    const merged = mergeExclude(["coverage"]);
+    expect(merged).toContain("node_modules");
+    expect(merged).toContain(".relunar");
+    expect(merged).toContain("coverage");
+  });
+
+  test("removes previously synced paths that disappeared locally", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-stale-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
+      execFileSync("git", ["add", "keep.ts"], { cwd });
+      commit(cwd, "init");
+
+      const sandbox = new RecordingSandbox();
+      await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: true,
+        exclude: [],
+        timeoutSeconds: 30,
+        previouslySyncedPaths: ["keep.ts", "stale-untracked.ts"],
+      });
+
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/stale-untracked.ts"))).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
   test("syncWorktree uploads archive and extracts into repo/", async () => {

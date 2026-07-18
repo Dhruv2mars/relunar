@@ -15,29 +15,35 @@ export type SyncOptions = {
   includeUntracked: boolean;
   exclude: string[];
   timeoutSeconds: number;
+  /** Paths from a prior sync that should be removed if no longer present locally. */
+  previouslySyncedPaths?: string[] | undefined;
 };
 
 export type SyncResult = {
   fileCount: number;
   deletedCount: number;
   archiveBytes: number;
+  /** Present local paths uploaded this sync (for the next sync manifest). */
+  syncedPaths: string[];
 };
 
-const DEFAULT_EXCLUDE = ["node_modules", ".git", ".relunar", "target", "dist", ".e2e-reports", ".agent-logs"];
+export const DEFAULT_SYNC_EXCLUDE = ["node_modules", ".git", ".relunar", "target", "dist", ".e2e-reports", ".agent-logs"];
 
 /** Sync dirty local worktree into sandbox `repo/`: overlay present files and remove deletions. */
 export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
-  const exclude = options.exclude.length > 0 ? options.exclude : DEFAULT_EXCLUDE;
+  const exclude = mergeExclude(options.exclude);
   const files = await listWorktreeFiles(options.cwd, options.includeUntracked, exclude);
   const deleted = await listDeletedTrackedFiles(options.cwd, exclude);
+  const stale = (options.previouslySyncedPaths ?? []).filter((path) => !files.includes(path) && !deleted.includes(path));
+  const removed = [...new Set([...deleted, ...stale])].sort();
 
-  if (files.length === 0 && deleted.length === 0) {
-    return { fileCount: 0, deletedCount: 0, archiveBytes: 0 };
+  if (files.length === 0 && removed.length === 0) {
+    return { fileCount: 0, deletedCount: 0, archiveBytes: 0, syncedPaths: [] };
   }
 
-  // Clear remote deletions and present paths before extract so file↔directory
-  // swaps succeed even when leftover generated files keep a remote directory alive.
-  const remoteClear = [...new Set([...deleted, ...files])].sort();
+  // Clear remote deletions, stale prior syncs, and present paths before extract so
+  // file↔directory swaps succeed even when leftover files keep a remote directory alive.
+  const remoteClear = [...new Set([...removed, ...files])].sort();
   if (remoteClear.length > 0) {
     await removeRemotePaths(options.sandbox, remoteClear, options.timeoutSeconds);
   }
@@ -47,7 +53,11 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
     archiveBytes = await uploadAndExtract(options, files);
   }
 
-  return { fileCount: files.length, deletedCount: deleted.length, archiveBytes };
+  return { fileCount: files.length, deletedCount: removed.length, archiveBytes, syncedPaths: files };
+}
+
+export function mergeExclude(configured: string[]): string[] {
+  return [...new Set([...DEFAULT_SYNC_EXCLUDE, ...configured])];
 }
 
 async function uploadAndExtract(options: SyncOptions, files: string[]): Promise<number> {

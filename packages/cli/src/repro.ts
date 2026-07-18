@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseRelunarConfig, defaultRelunarConfig, resolveAutoStopMinutes } from "./config";
 import { assertEvidenceGates } from "./evidence";
 import { redactSecret, withAgentNextStep } from "./reports";
-import { createRunId, readRun, writeRun } from "./runs";
+import { createRunId, readRun, runStoreDir, writeRun } from "./runs";
 import { syncWorktree } from "./sync";
 import type { CommandEvidence, Issue, RelunarConfig, RepoSlug, ReproOutcome, RunReport, SandboxProvider, SandboxSession } from "./types";
 
@@ -138,7 +138,7 @@ export async function execRepro(input: ExecReproInput): Promise<RunReport> {
 
   const shouldSync = input.sync === true || config.sync?.onExec === true;
   if (shouldSync) {
-    const syncEvidence = await recordSync(input.cwd, sandbox, config, input.includeUntracked);
+    const syncEvidence = await recordSync(input.cwd, report.runId, sandbox, config, input.includeUntracked);
     report.commands.push(syncEvidence);
     if (syncEvidence.status === "failed") {
       report.finishedAt = new Date().toISOString();
@@ -170,7 +170,7 @@ export async function syncRepro(input: {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
   const sandbox = await resumeAndTouch(input.sandboxProvider, report, config);
-  const syncEvidence = await recordSync(input.cwd, sandbox, config, input.includeUntracked);
+  const syncEvidence = await recordSync(input.cwd, report.runId, sandbox, config, input.includeUntracked);
   report.commands.push(syncEvidence);
   report.finishedAt = new Date().toISOString();
   const persisted = await persistRun(input.cwd, report, config.report.maxLogLines);
@@ -284,20 +284,25 @@ async function resumeAndTouch(provider: SandboxProvider, report: RunReport, conf
 
 async function recordSync(
   cwd: string,
+  runId: string,
   sandbox: SandboxSession,
   config: RelunarConfig,
   includeUntrackedOverride?: boolean,
 ): Promise<CommandEvidence> {
   const started = Date.now();
   const includeUntracked = includeUntrackedOverride ?? config.sync?.includeUntracked ?? false;
+  const manifestPath = join(runStoreDir(cwd), runId, "sync-manifest.json");
   try {
+    const previouslySyncedPaths = await readSyncManifest(manifestPath);
     const result = await syncWorktree({
       cwd,
       sandbox,
       includeUntracked,
       exclude: config.sync?.exclude ?? [],
       timeoutSeconds: config.commandTimeoutSeconds,
+      previouslySyncedPaths,
     });
+    await writeSyncManifest(manifestPath, result.syncedPaths);
     return {
       name: "repro_sync",
       command: `sync worktree (${result.fileCount} files, ${result.deletedCount} deleted)`,
@@ -319,6 +324,22 @@ async function recordSync(
       stderr: message,
     };
   }
+}
+
+async function readSyncManifest(path: string): Promise<string[]> {
+  try {
+    const raw = JSON.parse(await readFile(path, "utf8")) as { paths?: unknown };
+    return Array.isArray(raw.paths) ? raw.paths.filter((path): path is string => typeof path === "string") : [];
+  } catch (error) {
+    if (isNotFound(error)) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function writeSyncManifest(path: string, paths: string[]): Promise<void> {
+  await writeFile(path, `${JSON.stringify({ paths }, null, 2)}\n`, "utf8");
 }
 
 async function execEvidence(input: {

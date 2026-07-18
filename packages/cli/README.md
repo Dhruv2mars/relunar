@@ -90,9 +90,9 @@ sandbox:
 sync:
   onExec: false
   includeUntracked: false
+  # Extends built-ins (node_modules, .git, .relunar, target, dist, …)
   exclude:
-    - node_modules
-    - dist
+    - coverage
 
 evidence:
   reproduced:
