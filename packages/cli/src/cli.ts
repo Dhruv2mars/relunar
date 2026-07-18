@@ -328,7 +328,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     const outcome = parseOutcome(flagString(flags, "outcome"));
     const narrative = parseFinishNarrative(flags);
 
-    const active = await findActiveRunForIssue(deps.cwd, issueNumber);
+    const active = await findActiveRunForIssue(deps.cwd, issueNumber, repo);
     if (active) {
       report = active;
     } else {

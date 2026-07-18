@@ -151,12 +151,13 @@ describe("agent-driven repro lifecycle", () => {
       const sandbox = new FakeSandbox();
       const provider = fakeProvider(sandbox);
       const started = await startRepro(input(cwd, provider));
-      const active = await findActiveRunForIssue(cwd, 123);
+      const active = await findActiveRunForIssue(cwd, 123, "owner/repo");
       expect(active?.runId).toBe(started.runId);
+      expect(await findActiveRunForIssue(cwd, 123, "other/repo")).toBeNull();
 
       await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", sandboxProvider: provider });
       await finishRepro({ cwd, runId: started.runId, outcome: "not_reproduced", summary: "Did not crash.", sandboxProvider: provider });
-      expect(await findActiveRunForIssue(cwd, 123)).toBeNull();
+      expect(await findActiveRunForIssue(cwd, 123, "owner/repo")).toBeNull();
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

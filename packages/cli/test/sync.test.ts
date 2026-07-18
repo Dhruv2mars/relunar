@@ -82,6 +82,8 @@ describe("worktree sync", () => {
       const extractIndex = sandbox.commands.findIndex((command) => command.includes("tar -xzf"));
       expect(deleteIndex).toBeGreaterThanOrEqual(0);
       expect(extractIndex).toBeGreaterThan(deleteIndex);
+      // Present paths are cleared too (directory→file / leftover dir contents).
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/foo/bar.ts"))).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

@@ -35,9 +35,11 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
     return { fileCount: 0, deletedCount: 0, archiveBytes: 0 };
   }
 
-  // Remove remote deletions first so file→directory refactors can extract cleanly.
-  if (deleted.length > 0) {
-    await removeRemotePaths(options.sandbox, deleted, options.timeoutSeconds);
+  // Clear remote deletions and present paths before extract so file↔directory
+  // swaps succeed even when leftover generated files keep a remote directory alive.
+  const remoteClear = [...new Set([...deleted, ...files])].sort();
+  if (remoteClear.length > 0) {
+    await removeRemotePaths(options.sandbox, remoteClear, options.timeoutSeconds);
   }
 
   let archiveBytes = 0;
