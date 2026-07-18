@@ -1,11 +1,9 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { SandboxSession } from "./types";
-
-type FsStat = Awaited<ReturnType<typeof stat>>;
 
 const execFileAsync = promisify(execFile);
 
@@ -177,11 +175,11 @@ export async function listDeletedTrackedFiles(cwd: string, exclude: string[]): P
     }
   }
 
-  // Skip only when a regular file still exists (`git rm --cached`).
+  // Skip when a file or symlink still exists (`git rm --cached`, dangling links).
   // Absent paths and file→directory swaps still need remote removal.
   const deleted: string[] = [];
   for (const path of [...paths].sort()) {
-    if (!(await isPresentFile(join(cwd, path)))) {
+    if (!(await isPresentLeaf(join(cwd, path)))) {
       deleted.push(path);
     }
   }
@@ -208,17 +206,17 @@ export function isExcluded(path: string, exclude: string[]): boolean {
 
 async function pathExists(path: string): Promise<boolean> {
   try {
-    await access(path);
+    await lstat(path);
     return true;
   } catch {
     return false;
   }
 }
 
-async function isPresentFile(path: string): Promise<boolean> {
+async function isPresentLeaf(path: string): Promise<boolean> {
   try {
-    const info: FsStat = await stat(path);
-    return info.isFile();
+    const info = await lstat(path);
+    return info.isFile() || info.isSymbolicLink();
   } catch {
     return false;
   }

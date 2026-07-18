@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -34,6 +34,34 @@ describe("worktree sync", () => {
     expect(merged).toContain("node_modules");
     expect(merged).toContain(".relunar");
     expect(merged).toContain("coverage");
+  });
+
+  test("keeps tracked dangling symlinks in the sync upload set", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-symlink-"));
+    try {
+      initRepo(cwd);
+      await symlink("missing-target", join(cwd, "link"));
+      execFileSync("git", ["add", "link"], { cwd });
+      commit(cwd, "init");
+
+      expect(await listWorktreeFiles(cwd, false, [])).toEqual(["link"]);
+      expect(await listDeletedTrackedFiles(cwd, [])).toEqual([]);
+
+      const sandbox = new RecordingSandbox();
+      sandbox.remoteTracked = "link\0";
+      const result = await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+      expect(result.syncedPaths).toContain("link");
+      expect(result.fileCount).toBe(1);
+      expect(sandbox.uploads).toHaveLength(1);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 
   test("removes sandbox-tracked files absent from the local worktree", async () => {
