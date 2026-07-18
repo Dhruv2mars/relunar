@@ -12,8 +12,10 @@ describe("cli", () => {
     const output = await invoke(["help"]);
     expect(output.code).toBe(0);
     expect(output.stdout).toContain("relunar repro start <issue-number>");
+    expect(output.stdout).toContain("relunar repro <issue-number> -- <probe-command>");
     expect(output.stdout).toContain("relunar repro finish <run-id>");
     expect(output.stdout).toContain("Agent workflow");
+    expect(output.stdout).toContain("environment_ready means the sandbox is ready");
     expect(output.stdout).toContain("Machine setup");
   });
 
@@ -249,6 +251,22 @@ describe("cli", () => {
         expect(output.stderr).not.toContain("No repo linked");
         expect(output.stderr).not.toContain("Missing GitHub token");
       }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("one-shot finish flags require outcome and summary before network work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-oneshot-flags-"));
+    try {
+      const output = await invoke(["repro", "12", "--finish", "--", "bun", "test"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_SKIP_GH_AUTH_TOKEN: "1",
+      });
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Usage: relunar repro <issue-number> --finish --outcome");
+      expect(output.stderr).not.toContain("No repo linked");
+      expect(output.stderr).not.toContain("Missing GitHub token");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
