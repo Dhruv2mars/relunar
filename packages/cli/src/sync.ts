@@ -35,13 +35,15 @@ export async function syncWorktree(options: SyncOptions): Promise<SyncResult> {
   const files = await listWorktreeFiles(options.cwd, options.includeUntracked, exclude);
   const deleted = await listDeletedTrackedFiles(options.cwd, exclude);
   const stale = (options.previouslySyncedPaths ?? []).filter((path) => !files.includes(path) && !deleted.includes(path));
-  const removed = [...new Set([...deleted, ...stale])].sort();
+  const remoteTracked = await listRemoteTrackedFiles(options.sandbox, options.timeoutSeconds);
+  const remoteOnly = remoteTracked.filter((path) => !files.includes(path) && !isExcluded(path, exclude));
+  const removed = [...new Set([...deleted, ...stale, ...remoteOnly])].sort();
 
   if (files.length === 0 && removed.length === 0) {
     return { fileCount: 0, deletedCount: 0, archiveBytes: 0, syncedPaths: [] };
   }
 
-  // Clear remote deletions, stale prior syncs, and present paths before extract so
+  // Clear remote-only / deleted / stale paths and present paths before extract so
   // file↔directory swaps succeed even when leftover files keep a remote directory alive.
   const remoteClear = [...new Set([...removed, ...files])].sort();
   if (remoteClear.length > 0) {
@@ -85,6 +87,18 @@ async function uploadAndExtract(options: SyncOptions, files: string[]): Promise<
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+async function listRemoteTrackedFiles(sandbox: SandboxSession, timeoutSeconds: number): Promise<string[]> {
+  const result = await sandbox.run("git ls-files -z", "repo", timeoutSeconds);
+  if (result.exitCode !== 0) {
+    // Fresh/broken clones may not have a git index yet; treat as empty.
+    return [];
+  }
+  return result.stdout
+    .split("\0")
+    .map((path) => path.trim())
+    .filter((path) => path.length > 0);
 }
 
 async function removeRemotePaths(sandbox: SandboxSession, paths: string[], timeoutSeconds: number): Promise<void> {

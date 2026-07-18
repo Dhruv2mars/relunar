@@ -36,6 +36,30 @@ describe("worktree sync", () => {
     expect(merged).toContain("coverage");
   });
 
+  test("removes sandbox-tracked files absent from the local worktree", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-remote-only-"));
+    try {
+      initRepo(cwd);
+      await writeFile(join(cwd, "keep.ts"), "keep\n", "utf8");
+      execFileSync("git", ["add", "keep.ts"], { cwd });
+      commit(cwd, "init");
+
+      const sandbox = new RecordingSandbox();
+      sandbox.remoteTracked = "keep.ts\0stale-from-clone.ts\0";
+      await syncWorktree({
+        cwd,
+        sandbox,
+        includeUntracked: false,
+        exclude: [],
+        timeoutSeconds: 30,
+      });
+
+      expect(sandbox.commands.some((command) => command.includes("rm -rf") && command.includes("repo/stale-from-clone.ts"))).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("removes previously synced paths that disappeared locally", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-sync-stale-"));
     try {
@@ -209,9 +233,13 @@ class RecordingSandbox implements SandboxSession {
   readonly target = "test";
   readonly uploads: Array<{ localPath: string; remotePath: string }> = [];
   readonly commands: string[] = [];
+  remoteTracked = "";
 
   async run(command: string): Promise<SandboxExecResult> {
     this.commands.push(command);
+    if (command.includes("git ls-files")) {
+      return { exitCode: 0, stdout: this.remoteTracked, stderr: "", timedOut: false };
+    }
     return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
   }
 
