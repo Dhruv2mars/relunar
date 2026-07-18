@@ -61,10 +61,10 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       target: sandbox.target ?? this.options.target ?? null,
       run: async (command, cwd, timeoutSeconds, env) => {
         try {
-          // Daytona's executeCommand exposes a single result stream; merge stderr so
-          // probe evidence and output gates see compiler/runtime failures.
-          const merged = `/bin/bash -lc ${shellQuote(`${command} 2>&1`)}`;
-          const result = await sandbox.process.executeCommand(merged, cwd, env ?? {}, timeoutSeconds);
+          // Daytona collapses streams into `result`. Do not wrap with bash — custom
+          // images (e.g. Alpine) may lack it. Evidence gates treat failed/timed_out
+          // as probe signal even when captured text is empty.
+          const result = await sandbox.process.executeCommand(command, cwd, env ?? {}, timeoutSeconds);
           return {
             exitCode: result.exitCode,
             stdout: result.result ?? result.artifacts?.stdout ?? "",
@@ -103,8 +103,4 @@ function isTimeoutError(error: unknown): boolean {
     return false;
   }
   return /timeout|timed out/i.test(`${error.name} ${error.message}`);
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
 }
