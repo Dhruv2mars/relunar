@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertEvidenceGates } from "../src/evidence";
+import { assertEvidenceGates, compileOutputMatch } from "../src/evidence";
 import { defaultRelunarConfig } from "../src/config";
 import type { RelunarConfig, RunReport } from "../src/types";
 
@@ -89,6 +89,30 @@ describe("evidence gates", () => {
         exitCode: 1,
         durationMs: 10,
         stdout: "thread panicked at src/lib.rs",
+        stderr: "",
+      },
+    ]);
+    await assertEvidenceGates(report, "reproduced", config);
+  });
+
+  test("requireOutputMatch accepts documented (?i) prefix", async () => {
+    expect(compileOutputMatch("(?i)error|panic").flags).toContain("i");
+    const config: RelunarConfig = {
+      ...defaultRelunarConfig,
+      evidence: {
+        reproduced: {
+          requireOutputMatch: "(?i)error|panic",
+        },
+      },
+    };
+    const report = baseReport([
+      {
+        name: "repro",
+        command: "cargo test",
+        status: "failed",
+        exitCode: 1,
+        durationMs: 10,
+        stdout: "ERROR: boom",
         stderr: "",
       },
     ]);

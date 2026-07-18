@@ -39,7 +39,7 @@ export async function assertEvidenceGates(
   if (gate.requireOutputMatch) {
     let regex: RegExp;
     try {
-      regex = new RegExp(gate.requireOutputMatch, "m");
+      regex = compileOutputMatch(gate.requireOutputMatch);
     } catch {
       throw new Error(`Evidence gate failed: invalid requireOutputMatch regex: ${gate.requireOutputMatch}`);
     }
@@ -95,6 +95,17 @@ function hasProbeOutput(command: CommandEvidence): boolean {
   }
   // Providers that collapse stderr still leave a failure/timeout status as signal.
   return command.status === "failed" || command.status === "timed_out";
+}
+
+/** Accept JS regexes plus a leading `(?i)` inline flag (documented in README). */
+export function compileOutputMatch(pattern: string): RegExp {
+  let source = pattern;
+  let flags = "m";
+  if (source.startsWith("(?i)")) {
+    source = source.slice(4);
+    flags += "i";
+  }
+  return new RegExp(source, flags);
 }
 
 function shellQuote(value: string): string {

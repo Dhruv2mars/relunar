@@ -40,6 +40,20 @@ function baseReport(overrides: Partial<RunReport> = {}): RunReport {
 }
 
 describe("reports", () => {
+  test("surfaces blocked startup failure when summary is absent", () => {
+    const markdown = renderMarkdownReport(
+      baseReport({
+        status: "blocked",
+        summary: null,
+        failure: "Invalid .relunar.yml: sandbox.resources requires sandbox.image",
+        commands: [],
+      }),
+      20,
+    );
+    expect(markdown).toContain("## Repro: Blocked");
+    expect(markdown).toContain("Invalid .relunar.yml: sandbox.resources requires sandbox.image");
+  });
+
   test("renders maintainer markdown without harness slop", () => {
     const report = baseReport();
     const markdown = renderMarkdownReport(report, 2);

@@ -9,6 +9,9 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
 
   if (report.summary?.trim()) {
     lines.push(report.summary.trim(), "");
+  } else if (report.failure?.trim()) {
+    // Startup/orchestration blocked runs often have failure but no finish summary.
+    lines.push(report.failure.trim(), "");
   } else if (!isFinalOutcome(report.status)) {
     lines.push(statusBlurb(report), "");
   }
