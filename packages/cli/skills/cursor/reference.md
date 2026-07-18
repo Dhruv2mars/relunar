@@ -1,0 +1,59 @@
+# Relunar command reference
+
+Single source of truth for flags: `relunar <command> --help` and the CLI README.
+This file is a map, not a dump of help text.
+
+## Binary
+
+Prefer bun. Local feat-branch build when global is stale:
+
+```sh
+bun /Users/dhruv2mars/dev/github/relunar/packages/cli/dist/index.js
+# rebuild: cd …/packages/cli && bun run build
+```
+
+## Lifecycle map
+
+| Intent | Command |
+|--------|---------|
+| Health | `relunar doctor [--json]` |
+| List issues | `relunar issues list [--state open\|closed\|all] [--limit N] [--json]` |
+| One-shot probe | `relunar repro <n> -- <probe>` |
+| One-shot + finish | `relunar repro <n> --finish --outcome … --summary … [--comment] -- <probe>` |
+| Start sandbox | `relunar repro start <n>` |
+| Upload file | `relunar repro upload <run-id> <local> <remote>` |
+| Exec in sandbox | `relunar repro exec <run-id> -- <cmd>` |
+| Finish | `relunar repro finish <run-id> --outcome … --summary … [narrative flags] [--comment]` |
+| Abort | `relunar repro abort <run-id>` |
+| Inspect | `relunar runs show <run-id> --json` / `relunar runs list --json` |
+
+## Finish narrative
+
+- `--comment` only when posting to GitHub.
+- Relunar formats the comment; it does not invent repro steps from raw logs.
+- Supply maintainer prose: `--summary` (required), plus `--repro-steps`, `--observed`, `--expected`, `--environment` when known.
+- Outcomes: `reproduced` | `not-reproduced` | `blocked`.
+- Evidence required before finish-with-comment; baseline/setup output is not Evidence.
+
+## Setup (only when doctor fails)
+
+```sh
+relunar setup
+relunar init
+relunar repo link owner/repo
+relunar auth github [--token …]
+relunar auth daytona --api-key …
+```
+
+Machine setup is global. Repo setup is inside the target repository.
+
+## Artifacts
+
+```txt
+.relunar/runs/<run-id>/
+  report.md
+  report.json
+  logs.txt
+```
+
+Harness internals stay in `report.json`. The Finish narrative is for maintainers.
