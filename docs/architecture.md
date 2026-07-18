@@ -43,14 +43,18 @@ relunar repro start 123
   -> run setup commands
   -> run baseline commands
   -> persist environment_ready report and sandbox id
+relunar repro sync <run-id> [--include-untracked]
+  -> resume sandbox, refresh idle TTL, sync dirty local worktree into repo/
 relunar repro upload <run-id> <local-path> <remote-path>
   -> resume sandbox and upload repro input
-relunar repro exec <run-id> -- <command>
-  -> resume sandbox and append issue-specific command evidence
+relunar repro exec <run-id> [--sync] -- <command>
+  -> resume sandbox, optionally sync worktree, append issue-specific command evidence
 relunar repro finish <run-id> --outcome <outcome> --summary <text> [--comment]
-  -> require issue-specific command evidence
+  -> enforce evidence gates (reproduced requires probe output by default)
   -> record reproduced, not_reproduced, or blocked outcome
   -> write report.json, report.md, logs.txt
   -> optionally post GitHub comment
-  -> cleanup sandbox
+  -> cleanup sandbox (unless --keep-sandbox)
 ```
+
+Sandbox stays warm across probe iterations until finish/abort. Idle auto-stop defaults to 60 minutes (`sandbox.autoStopMinutes`) and is refreshed on each resume.

@@ -1,5 +1,6 @@
 import { CodeLanguage, Daytona, type DaytonaConfig } from "@daytona/sdk";
-import type { SandboxProvider, SandboxResources, SandboxSession } from "./types";
+import { DEFAULT_AUTO_STOP_MINUTES } from "./config";
+import type { CreateSandboxInput, SandboxProvider, SandboxSession } from "./types";
 
 export type DaytonaProviderOptions = {
   apiKey: string;
@@ -24,14 +25,15 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     this.daytona = new Daytona(config);
   }
 
-  async createSandbox(input: { runId: string; image?: string | undefined; resources?: SandboxResources | undefined }): Promise<SandboxSession> {
+  async createSandbox(input: CreateSandboxInput): Promise<SandboxSession> {
+    const autoStopInterval = input.autoStopMinutes ?? DEFAULT_AUTO_STOP_MINUTES;
     const sandbox = await this.daytona.create(
       {
         ...(input.image
           ? { image: input.image, ...(input.resources ? { resources: input.resources } : {}) }
           : { language: CodeLanguage.TYPESCRIPT }),
         ephemeral: true,
-        autoStopInterval: 30,
+        autoStopInterval,
         autoDeleteInterval: 0,
         labels: {
           app: "relunar",
@@ -41,7 +43,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       { timeout: 120 },
     );
 
-    return this.session(sandbox);
+    return this.session(sandbox, autoStopInterval);
   }
 
   async resumeSandbox(id: string): Promise<SandboxSession> {
@@ -49,10 +51,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     if (sandbox.state !== "started") {
       await sandbox.start(120);
     }
-    return this.session(sandbox);
+    const autoStopInterval = sandbox.autoStopInterval ?? DEFAULT_AUTO_STOP_MINUTES;
+    return this.session(sandbox, autoStopInterval);
   }
 
-  private session(sandbox: Awaited<ReturnType<Daytona["get"]>>): SandboxSession {
+  private session(sandbox: Awaited<ReturnType<Daytona["get"]>>, autoStopMinutes: number): SandboxSession {
     return {
       id: sandbox.id,
       target: sandbox.target ?? this.options.target ?? null,
@@ -79,6 +82,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       },
       upload: async (localPath, remotePath) => {
         await sandbox.fs.uploadFile(localPath, remotePath);
+      },
+      touchIdle: async (minutes = autoStopMinutes) => {
+        await sandbox.setAutostopInterval(minutes);
       },
       dispose: async () => {
         await sandbox.delete(120).catch(async () => {

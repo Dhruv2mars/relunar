@@ -25,6 +25,40 @@ describe("relunar config", () => {
     expect(() => parseRelunarConfig("version: 1\nsandbox:\n  resources:\n    memory: 4\n")).toThrow();
   });
 
+  test("defaults sandbox auto-stop and sync settings", () => {
+    const config = parseRelunarConfig("version: 1\n");
+    expect(config.sandbox?.autoStopMinutes).toBe(60);
+    expect(config.sync?.onExec).toBe(false);
+    expect(config.sync?.includeUntracked).toBe(false);
+  });
+
+  test("parses sync and evidence gates", () => {
+    const config = parseRelunarConfig(
+      [
+        "version: 1",
+        "sandbox:",
+        "  autoStopMinutes: 120",
+        "sync:",
+        "  onExec: true",
+        "  includeUntracked: true",
+        "  exclude:",
+        "    - node_modules",
+        "evidence:",
+        "  reproduced:",
+        "    requireNonZeroExit: true",
+        "    requireOutputMatch: error|panic",
+        "    requireArtifacts:",
+        "      - repo/repro.log",
+        "",
+      ].join("\n"),
+    );
+    expect(config.sandbox?.autoStopMinutes).toBe(120);
+    expect(config.sync).toEqual({ onExec: true, includeUntracked: true, exclude: ["node_modules"] });
+    expect(config.evidence?.reproduced?.requireNonZeroExit).toBe(true);
+    expect(config.evidence?.reproduced?.requireOutputMatch).toBe("error|panic");
+    expect(config.evidence?.reproduced?.requireArtifacts).toEqual(["repo/repro.log"]);
+  });
+
   test("writes init config without overwriting existing file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-config-"));
     try {

@@ -68,6 +68,47 @@ describe("agent-driven repro lifecycle", () => {
     }
   });
 
+  test("rejects reproduced finish when probe produced no output", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-output-gate-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      await execRepro({ cwd, runId: started.runId, command: "true", sandboxProvider: provider });
+
+      await expect(
+        finishRepro({ cwd, runId: started.runId, outcome: "reproduced", summary: "Claimed repro with empty probe.", sandboxProvider: provider }),
+      ).rejects.toThrow("stdout or stderr");
+      expect(sandbox.disposed).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("keep-sandbox leaves sandbox alive after finish", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-keep-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", sandboxProvider: provider });
+      await finishRepro({
+        cwd,
+        runId: started.runId,
+        outcome: "reproduced",
+        summary: "Still warm for follow-up.",
+        keepSandbox: true,
+        sandboxProvider: provider,
+      });
+      expect(sandbox.disposed).toBe(false);
+      expect(sandbox.touchCount).toBeGreaterThan(0);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("one-shot parse keeps finish narrative flags before passthrough probe", () => {
     const parsed = parseArgs([
       "repro",
@@ -137,15 +178,21 @@ class FakeSandbox implements SandboxSession {
   readonly id = "sandbox-1";
   readonly target = "test";
   disposed = false;
+  touchCount = 0;
 
   async run(command: string): Promise<SandboxExecResult> {
     if (command.includes("git rev-parse")) return ok("abc123\n");
+    if (command === "true") return ok("");
     return ok(command === "bun repro.ts" ? "crash reproduced" : "ok");
   }
 
   async upload(localPath: string, remotePath: string): Promise<void> {
     expect(localPath).toBe("repro.ts");
     expect(remotePath).toBe("repo/repro.ts");
+  }
+
+  async touchIdle(): Promise<void> {
+    this.touchCount += 1;
   }
 
   async dispose(): Promise<void> {

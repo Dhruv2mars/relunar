@@ -85,6 +85,22 @@ sandbox:
     cpu: 4
     memory: 8
     disk: 10
+  autoStopMinutes: 60
+
+sync:
+  onExec: false
+  includeUntracked: false
+  exclude:
+    - node_modules
+    - dist
+
+evidence:
+  reproduced:
+    requireProbeOutput: true
+    # requireNonZeroExit: true
+    # requireOutputMatch: "(?i)error|panic|fail"
+    # requireArtifacts:
+    #   - repo/repro-output.log
 
 commandTimeoutSeconds: 300
 
@@ -92,7 +108,7 @@ report:
   maxLogLines: 200
 ```
 
-`setup` installs dependencies. `baseline` verifies environment readiness. `repro start` / one-shot keep the sandbox alive; `repro upload` and `repro exec` capture issue-specific evidence; `repro finish` requires probe evidence and a summary before it can comment and clean up. Final outcomes are only `reproduced`, `not-reproduced`, or `blocked`. Set `sandbox.image` when the repo needs a runtime different from Daytona's default image. `sandbox.resources` requires an image and sets CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
+`setup` installs dependencies. `baseline` verifies environment readiness. `repro start` / one-shot keep the sandbox warm until `finish`/`abort`; Relunar refreshes Daytona idle auto-stop on each resume (`sandbox.autoStopMinutes`, default 60). Use `repro sync` or `repro exec --sync` (or `sync.onExec: true`) to push a dirty local worktree into the sandbox before probing. `repro finish` enforces evidence gates — by default `reproduced` requires issue-specific probe output, not just setup/baseline. Final outcomes are only `reproduced`, `not-reproduced`, or `blocked`. Set `sandbox.image` when the repo needs a runtime different from Daytona's default image. `sandbox.resources` requires an image and sets CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
 
 ```txt
 .relunar/runs/<run-id>/

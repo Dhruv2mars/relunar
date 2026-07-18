@@ -5,6 +5,17 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 import type { GlobalConfig, RelunarConfig, RepoSlug } from "./types";
 
+const evidenceGateSchema = z
+  .object({
+    requireReproCommand: z.boolean().optional(),
+    requireNonZeroExit: z.boolean().optional(),
+    requireZeroExit: z.boolean().optional(),
+    requireProbeOutput: z.boolean().optional(),
+    requireOutputMatch: z.string().min(1).optional(),
+    requireArtifacts: z.array(z.string().min(1)).optional(),
+  })
+  .optional();
+
 const configSchema = z.object({
   version: z.literal(1).default(1),
   setup: z.array(z.string().min(1)).default(["bun install"]),
@@ -19,9 +30,24 @@ const configSchema = z.object({
           disk: z.number().positive().optional(),
         })
         .optional(),
+      autoStopMinutes: z.number().int().min(0).optional(),
     })
     .refine((sandbox) => !sandbox.resources || sandbox.image !== undefined, {
       message: "sandbox.resources requires sandbox.image",
+    })
+    .optional(),
+  sync: z
+    .object({
+      onExec: z.boolean().optional(),
+      includeUntracked: z.boolean().optional(),
+      exclude: z.array(z.string().min(1)).optional(),
+    })
+    .optional(),
+  evidence: z
+    .object({
+      reproduced: evidenceGateSchema,
+      not_reproduced: evidenceGateSchema,
+      blocked: evidenceGateSchema,
     })
     .optional(),
   commandTimeoutSeconds: z.number().int().positive().default(300),
@@ -42,10 +68,20 @@ const globalConfigSchema = z.object({
   repoLinks: z.record(z.string(), z.custom<RepoSlug>((value) => isRepoSlug(value))).default({}),
 });
 
+/** Default idle TTL: 60 minutes. Refreshed on each resume. */
+export const DEFAULT_AUTO_STOP_MINUTES = 60;
+
 export const defaultRelunarConfig: RelunarConfig = {
   version: 1,
   setup: ["bun install"],
   baseline: ["bun run typecheck", "bun test"],
+  sandbox: {
+    autoStopMinutes: DEFAULT_AUTO_STOP_MINUTES,
+  },
+  sync: {
+    onExec: false,
+    includeUntracked: false,
+  },
   commandTimeoutSeconds: 300,
   report: {
     maxLogLines: 200,
@@ -58,7 +94,20 @@ export function isRepoSlug(value: unknown): value is RepoSlug {
 
 export function parseRelunarConfig(raw: string): RelunarConfig {
   const parsed = parse(raw) as unknown;
-  return configSchema.parse(parsed);
+  const config = configSchema.parse(parsed);
+  return {
+    ...config,
+    sandbox: {
+      ...config.sandbox,
+      autoStopMinutes: config.sandbox?.autoStopMinutes ?? DEFAULT_AUTO_STOP_MINUTES,
+    },
+    sync: {
+      onExec: config.sync?.onExec ?? false,
+      includeUntracked: config.sync?.includeUntracked ?? false,
+      ...(config.sync?.exclude ? { exclude: config.sync.exclude } : {}),
+    },
+    ...(config.evidence ? { evidence: config.evidence } : {}),
+  };
 }
 
 export function renderRelunarConfig(config: RelunarConfig = defaultRelunarConfig): string {
@@ -110,6 +159,10 @@ export async function linkRepo(cwd: string, repo: RepoSlug, path = globalConfigP
 export async function findLinkedRepo(cwd: string, path = globalConfigPath()): Promise<RepoSlug | null> {
   const config = await readGlobalConfig(path);
   return config.repoLinks[cwd] ?? null;
+}
+
+export function resolveAutoStopMinutes(config: RelunarConfig): number {
+  return config.sandbox?.autoStopMinutes ?? DEFAULT_AUTO_STOP_MINUTES;
 }
 
 function isNotFound(error: unknown): boolean {

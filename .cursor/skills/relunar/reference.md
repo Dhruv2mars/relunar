@@ -18,12 +18,13 @@ bun /Users/dhruv2mars/dev/github/relunar/packages/cli/dist/index.js
 |--------|---------|
 | Health | `relunar doctor [--json]` |
 | List issues | `relunar issues list [--state open\|closed\|all] [--limit N] [--json]` |
-| One-shot probe | `relunar repro <n> -- <probe>` |
+| One-shot probe | `relunar repro <n> [--sync] -- <probe>` |
 | One-shot + finish | `relunar repro <n> --finish --outcome … --summary … [--comment] -- <probe>` |
 | Start sandbox | `relunar repro start <n>` |
+| Sync dirty tree | `relunar repro sync <run-id> [--include-untracked]` |
 | Upload file | `relunar repro upload <run-id> <local> <remote>` |
-| Exec in sandbox | `relunar repro exec <run-id> -- <cmd>` |
-| Finish | `relunar repro finish <run-id> --outcome … --summary … [narrative flags] [--comment]` |
+| Exec in sandbox | `relunar repro exec <run-id> [--sync] -- <cmd>` |
+| Finish | `relunar repro finish <run-id> --outcome … --summary … [narrative flags] [--comment] [--keep-sandbox]` |
 | Abort | `relunar repro abort <run-id>` |
 | Inspect | `relunar runs show <run-id> --json` / `relunar runs list --json` |
 
@@ -33,7 +34,19 @@ bun /Users/dhruv2mars/dev/github/relunar/packages/cli/dist/index.js
 - Relunar formats the comment; it does not invent repro steps from raw logs.
 - Supply maintainer prose: `--summary` (required), plus `--repro-steps`, `--observed`, `--expected`, `--environment` when known.
 - Outcomes: `reproduced` | `not-reproduced` | `blocked`.
-- Evidence required before finish-with-comment; baseline/setup output is not Evidence.
+- Evidence required before finish; baseline/setup output is not Evidence.
+- Default gate: `reproduced` needs at least one `repro` command with stdout/stderr. Stricter gates live in `.relunar.yml` `evidence:`.
+- Sandbox stays warm until finish/abort; idle TTL is `sandbox.autoStopMinutes` (default 60). Prefer `--sync` when you edited files locally.
+
+## Sync
+
+```sh
+relunar repro sync <run-id>
+relunar repro exec <run-id> --sync -- <cmd>
+relunar repro <n> --sync -- <cmd>
+```
+
+Or set `sync.onExec: true` in `.relunar.yml`.
 
 ## Setup (only when doctor fails)
 
