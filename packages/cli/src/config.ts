@@ -252,8 +252,8 @@ async function detectInitConfig(cwd: string): Promise<RelunarConfig> {
     return {
       ...defaultRelunarConfig,
       sandbox: { ...defaultRelunarConfig.sandbox, image: gradleVersion ? `gradle:${gradleVersion}-jdk21` : "gradle:jdk21" },
-      setup: ["gradle --no-daemon classes"],
-      baseline: ["gradle --no-daemon test"],
+      setup: ["gradle --version"],
+      baseline: ["java -version && javac -version"],
     };
   }
   if (await exists(join(cwd, "pom.xml"))) {

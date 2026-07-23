@@ -167,8 +167,8 @@ describe("relunar config", () => {
       });
       expect(parseRelunarConfig(await readFile(join(gradleDir, ".relunar.yml"), "utf8"))).toMatchObject({
         sandbox: { image: "gradle:8.14-jdk21" },
-        setup: ["gradle --no-daemon classes"],
-        baseline: ["gradle --no-daemon test"],
+        setup: ["gradle --version"],
+        baseline: ["java -version && javac -version"],
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
