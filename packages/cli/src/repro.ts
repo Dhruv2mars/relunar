@@ -382,10 +382,19 @@ async function cleanupReproUnlocked(input: {
   await persistRun(input.cwd, report, config.report.maxLogLines);
   try {
     const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
-    const commandEnv = resolveCommandEnv(config, process.env);
-    const workdir = resolveWorkdir(config.workspace?.workdir);
-    for (const service of [...(config.services ?? [])].reverse()) {
-      if (service.stop) await sandbox.run(service.stop, workdir, config.commandTimeoutSeconds, commandEnv);
+    try {
+      const commandEnv = resolveCommandEnv(config, process.env);
+      const workdir = resolveWorkdir(config.workspace?.workdir);
+      for (const service of [...(config.services ?? [])].reverse()) {
+        if (!service.stop) continue;
+        try {
+          await sandbox.run(service.stop, workdir, config.commandTimeoutSeconds, commandEnv);
+        } catch {
+          // Disposal is the cleanup guarantee; a best-effort service stop must not leak the sandbox.
+        }
+      }
+    } catch {
+      // Passthrough variables can disappear after a run. Disposal does not depend on command environment.
     }
     await sandbox.dispose();
     report.cleanup = { status: "completed", error: null, updatedAt: new Date().toISOString() };

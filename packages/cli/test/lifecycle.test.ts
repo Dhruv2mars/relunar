@@ -65,6 +65,55 @@ describe("agent-driven repro lifecycle", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("cleanup disposes the sandbox when passthrough variables are no longer available", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-cleanup-env-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\nenvironment:\n  passthrough: [RELUNAR_TEST_EPHEMERAL]\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro({
+        ...input(cwd, provider),
+        hostEnv: { RELUNAR_TEST_EPHEMERAL: "available-at-start" },
+      });
+      await finishRepro({
+        cwd,
+        runId: started.runId,
+        outcome: "blocked",
+        summary: "No issue-specific probe was available.",
+        sandboxProvider: provider,
+      });
+
+      const cleaned = await cleanupRepro({ cwd, runId: started.runId, sandboxProvider: provider });
+      expect(cleaned.cleanup?.status).toBe("completed");
+      expect(sandbox.disposed).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("cleanup disposes the sandbox when a service stop command fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-cleanup-stop-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\nservices:\n  - name: fixture\n    start: start-service\n    ready: service-ready\n    stop: stop-service\n", "utf8");
+      const sandbox = new FailingStopSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      await finishRepro({
+        cwd,
+        runId: started.runId,
+        outcome: "blocked",
+        summary: "No issue-specific probe was available.",
+        sandboxProvider: provider,
+      });
+
+      const cleaned = await cleanupRepro({ cwd, runId: started.runId, sandboxProvider: provider });
+      expect(cleaned.cleanup?.status).toBe("completed");
+      expect(sandbox.disposed).toBe(true);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
   test("uses and persists repository configuration before sandbox creation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-remote-config-"));
     try {
@@ -456,6 +505,16 @@ class FailingResetSandbox extends FakeSandbox {
     if (command === "reset-fixture") {
       this.invocations.push({ command, cwd });
       return { exitCode: 1, stdout: "", stderr: "reset failed", timedOut: false };
+    }
+    return super.run(command, cwd);
+  }
+}
+
+class FailingStopSandbox extends FakeSandbox {
+  override async run(command: string, cwd?: string): Promise<SandboxExecResult> {
+    if (command === "stop-service") {
+      this.invocations.push({ command, cwd });
+      throw new Error("stop failed");
     }
     return super.run(command, cwd);
   }
