@@ -35,11 +35,16 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   const [command, subcommand, third] = positionals;
 
   try {
+    if (flagBoolean(flags, "help")) {
+      deps.io.stdout(helpText());
+      return 0;
+    }
+
     if (!command) {
       return await start(deps);
     }
 
-    if (command === "help" || flagBoolean(flags, "help")) {
+    if (command === "help") {
       deps.io.stdout(helpText());
       return 0;
     }

@@ -118,7 +118,7 @@ describe("relunar config", () => {
     }
   });
 
-  test("detects Go, Python, and native repositories when writing init config", async () => {
+  test("detects Go, Python, shell, native, and Java repositories when writing init config", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-config-detect-"));
     try {
       const goDir = join(dir, "go");
@@ -127,6 +127,7 @@ describe("relunar config", () => {
       const cmakeDir = join(dir, "cmake");
       const mavenDir = join(dir, "maven");
       const gradleDir = join(dir, "gradle");
+      const shellDir = join(dir, "shell");
       await Bun.write(join(goDir, "go.mod"), "module example.com/test\n\ngo 1.22\n");
       await Bun.write(join(pythonDir, "pyproject.toml"), "[project]\nname = 'sample'\nversion = '1.0.0'\n");
       await Bun.write(join(autotoolsDir, "configure.ac"), "AC_INIT([sample], [1.0])\n");
@@ -135,12 +136,15 @@ describe("relunar config", () => {
       await Bun.write(join(mavenDir, "pom.xml"), "<project/>\n");
       await Bun.write(join(gradleDir, "gradlew"), "#!/bin/sh\n");
       await Bun.write(join(gradleDir, "gradle", "wrapper", "gradle-wrapper.properties"), "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-bin.zip\n");
+      await Bun.write(join(shellDir, "bin", "bats"), "#!/usr/bin/env bash\n");
+      await Bun.write(join(shellDir, "package.json"), '{"scripts":{"test":"bin/bats test"}}\n');
       await writeRelunarConfig(join(goDir, ".relunar.yml"));
       await writeRelunarConfig(join(pythonDir, ".relunar.yml"));
       await writeRelunarConfig(join(autotoolsDir, ".relunar.yml"));
       await writeRelunarConfig(join(cmakeDir, ".relunar.yml"));
       await writeRelunarConfig(join(mavenDir, ".relunar.yml"));
       await writeRelunarConfig(join(gradleDir, ".relunar.yml"));
+      await writeRelunarConfig(join(shellDir, ".relunar.yml"));
 
       expect(parseRelunarConfig(await readFile(join(goDir, ".relunar.yml"), "utf8"))).toMatchObject({
         setup: ["go mod download"],
@@ -169,6 +173,11 @@ describe("relunar config", () => {
         sandbox: { image: "gradle:8.14-jdk21" },
         setup: ["gradle --version"],
         baseline: ["java -version && javac -version"],
+      });
+      expect(parseRelunarConfig(await readFile(join(shellDir, ".relunar.yml"), "utf8"))).toMatchObject({
+        sandbox: { image: "mcr.microsoft.com/devcontainers/base:1-debian-12" },
+        setup: [],
+        baseline: ["bin/bats --version", "bin/bats --tap test/fixtures/bats/passing.bats"],
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

@@ -264,6 +264,14 @@ async function detectInitConfig(cwd: string): Promise<RelunarConfig> {
       baseline: ["mvn -B test"],
     };
   }
+  if (await exists(join(cwd, "bin", "bats"))) {
+    return {
+      ...defaultRelunarConfig,
+      sandbox: { ...defaultRelunarConfig.sandbox, image: "mcr.microsoft.com/devcontainers/base:1-debian-12" },
+      setup: [],
+      baseline: ["bin/bats --version", "bin/bats --tap test/fixtures/bats/passing.bats"],
+    };
+  }
   if (await exists(join(cwd, "package-lock.json"))) {
     return { ...defaultRelunarConfig, setup: ["npm ci"], baseline: ["npm test"] };
   }

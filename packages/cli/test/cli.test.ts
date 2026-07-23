@@ -25,6 +25,14 @@ describe("cli", () => {
     expect(output.stdout).toContain("--repeat");
   });
 
+  test("prints help for the conventional --help flag", async () => {
+    const output = await invoke(["--help"]);
+    expect(output.code).toBe(0);
+    expect(output.stdout).toContain("Agent workflow");
+    expect(output.stdout).toContain("relunar skills list|get|install [agent]");
+    expect(output.stdout).not.toContain("Setup complete. Useful next commands");
+  });
+
   test("probe assertion flags validate before auth and network work", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-probe-flags-"));
     try {
