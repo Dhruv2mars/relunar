@@ -228,6 +228,9 @@ describe("worktree sync", () => {
       expect(result.archiveBytes).toBeGreaterThan(0);
       expect(sandbox.uploads).toHaveLength(1);
       expect(sandbox.uploads[0]?.remotePath).toBe("/tmp/relunar-worktree-sync.tgz");
+      expect(sandbox.archiveEntries).toContain("probe.sh");
+      expect(sandbox.archiveEntries).toContain("--dash.txt");
+      expect(sandbox.archiveEntries.some((entry) => entry.split("/").some((part) => part.startsWith("._")))).toBe(false);
       expect(sandbox.commands.some((command) => command.includes("tar -xzf"))).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -364,6 +367,7 @@ class RecordingSandbox implements SandboxSession {
   readonly id = "sandbox-sync";
   readonly target = "test";
   readonly uploads: Array<{ localPath: string; remotePath: string }> = [];
+  readonly archiveEntries: string[] = [];
   readonly commands: string[] = [];
 
   async run(command: string): Promise<SandboxExecResult> {
@@ -373,6 +377,11 @@ class RecordingSandbox implements SandboxSession {
 
   async upload(localPath: string, remotePath: string): Promise<void> {
     this.uploads.push({ localPath, remotePath });
+    this.archiveEntries.push(
+      ...execFileSync("tar", ["-tzf", localPath], { encoding: "utf8" })
+        .split("\n")
+        .filter(Boolean),
+    );
   }
 
   async dispose(): Promise<void> {}
