@@ -21,11 +21,11 @@ Command details live in [`reference.md`](reference.md) and `relunar <cmd> --help
 
 ## Leading words
 
-| Word | Means |
-|------|--------|
-| **Relunar** | The CLI harness — sandboxes, logs, reports, optional GitHub comments |
-| **harness** | Deterministic plumbing; you supply judgment |
-| **Evidence** | Issue-specific probe plus explicit machine assertions; output alone is not verified proof |
+| Word                 | Means                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| **Relunar**          | The CLI harness — sandboxes, logs, reports, optional GitHub comments                            |
+| **harness**          | Deterministic plumbing; you supply judgment                                                     |
+| **Evidence**         | Issue-specific probe plus explicit machine assertions; output alone is not verified proof       |
 | **Finish narrative** | Maintainer-useful `--summary` / `--repro-steps` / `--observed` / `--expected` / `--environment` |
 
 `environment_ready` ≠ reproduced. Always probe.
@@ -56,8 +56,8 @@ For each issue number `N`:
 
 1. **Start** — `relunar repro start N` (or one-shot `relunar repro N -- <probe>`). Sandbox ready ≠ Evidence.
 2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload <run-id> <local> <repo-relative-path>`), then run issue-specific probes with `--claim` plus at least one assertion such as `--expect-exit`, `--output-match`, or `--file-exists`. Upload destinations and probe commands are relative to the configured repository workdir; never prefix them with `repo/` or guess the provider's absolute checkout path. Record the returned evidence ID. Use `--repeat` for flaky claims and a control command when causal isolation matters.
-3. **Inspect** — `relunar runs show <run-id> --json` when deciding the outcome.
-4. **Finish** — exactly one outcome: `reproduced` | `not-reproduced` | `blocked`. `reproduced` and `not-reproduced` require machine-checked Evidence. Never use `--skip-evidence-gates` for a publishable result.
+3. **Inspect** — use the evidence ID returned by `repro exec`; only run `relunar runs show <run-id> --json` when you need the complete record.
+4. **Finish** — exactly one outcome: `reproduced` when the asserted issue behavior matches; `not-reproduced` when an assertion for the issue behavior was evaluated and did not match; `blocked` when required inputs or environment cannot be obtained. Issue type (`bug` versus `enhancement`) does not determine outcome. `reproduced` and `not-reproduced` require machine-checked Evidence; `blocked` may omit `--evidence`, but must name the concrete missing prerequisite. Never use `--skip-evidence-gates` for a publishable result.
 
 ```sh
 relunar repro finish <run-id> \
@@ -70,6 +70,8 @@ relunar repro finish <run-id> \
   --environment "…" \
   --comment   # only when posting to GitHub
 ```
+
+Omit `--evidence` only for `blocked` when no relevant probe can run.
 
 **Done when (per issue):** `repro finish` succeeded with an outcome and all four narrative fields filled from Evidence. Preview with `relunar repro comment preview <run-id>`. Post only when requested; retry safely with `relunar repro comment post <run-id>`. Run `relunar repro cleanup <run-id>` after a preview-only finish or a successful retry.
 
