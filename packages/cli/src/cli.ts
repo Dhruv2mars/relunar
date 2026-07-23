@@ -1,19 +1,60 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseArgs, flagBoolean, flagNeedsValue, flagPositiveInteger, flagString } from "./args";
-import { findLinkedRepo, globalConfigPath, isRepoSlug, linkRepo, readGlobalConfig, writeGlobalConfig, writeRelunarConfig } from "./config";
-import { resolveDaytonaApiKey, resolveGithubToken, writeSecret, type SecretBackend } from "./credentials";
+import {
+  parseArgs,
+  flagBoolean,
+  flagNeedsValue,
+  flagPositiveInteger,
+  flagString,
+} from "./args";
+import {
+  findLinkedRepo,
+  globalConfigPath,
+  isRepoSlug,
+  linkRepo,
+  readGlobalConfig,
+  writeGlobalConfig,
+  writeRelunarConfig,
+} from "./config";
+import {
+  resolveDaytonaApiKey,
+  resolveGithubToken,
+  writeSecret,
+  type SecretBackend,
+} from "./credentials";
 import { DaytonaSandboxProvider } from "./daytona";
 import { GitHubClient } from "./github";
 import { withAgentNextStep } from "./reports";
 import { previewPublication, publishRunComment } from "./publication";
 import { gcOrphanSandboxes, inspectSandboxes } from "./recovery";
-import { abortRepro, cleanupRepro, execRepro, finishRepro, startRepro, syncRepro, uploadReproFile } from "./repro";
+import {
+  abortRepro,
+  cleanupRepro,
+  execRepro,
+  finishRepro,
+  startRepro,
+  syncRepro,
+  uploadReproFile,
+} from "./repro";
 import { findActiveRunForIssue, listRuns, readRun, runStoreDir } from "./runs";
-import { readSetupStatus, runInteractiveSetup, type SetupPrompter } from "./setup";
-import { getSkill, installSkill, isSupportedSkill, supportedSkills } from "./skills";
-import type { ProbeExpectations, RepoSlug, ReproOutcome, RunReport } from "./types";
+import {
+  readSetupStatus,
+  runInteractiveSetup,
+  type SetupPrompter,
+} from "./setup";
+import {
+  getSkill,
+  installSkill,
+  isSupportedSkill,
+  supportedSkills,
+} from "./skills";
+import type {
+  ProbeExpectations,
+  RepoSlug,
+  ReproOutcome,
+  RunReport,
+} from "./types";
 import type { SecretName } from "./credentials";
 
 export type CliIO = {
@@ -26,7 +67,9 @@ export type CliDeps = {
   env: NodeJS.ProcessEnv;
   io: CliIO;
   prompt?: SetupPrompter | undefined;
-  secretWriter?: ((name: SecretName, value: string) => Promise<SecretBackend | void>) | undefined;
+  secretWriter?:
+    | ((name: SecretName, value: string) => Promise<SecretBackend | void>)
+    | undefined;
   isInteractive?: boolean | undefined;
 };
 
@@ -36,7 +79,7 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
 
   try {
     if (flagBoolean(flags, "help")) {
-      deps.io.stdout(helpText());
+      deps.io.stdout(contextualHelp(positionals));
       return 0;
     }
 
@@ -54,7 +97,9 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         await writeRelunarConfig(join(deps.cwd, ".relunar.yml"));
       } catch (error) {
         if (isAlreadyExists(error)) {
-          deps.io.stderr(".relunar.yml already exists. Edit it in place or remove it before running init again.\n");
+          deps.io.stderr(
+            ".relunar.yml already exists. Edit it in place or remove it before running init again.\n",
+          );
           return 1;
         }
         throw error;
@@ -119,22 +164,35 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
     deps.io.stderr(`Unknown command: ${positionals.join(" ")}\n`);
     return 1;
   } catch (error) {
-    deps.io.stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+    deps.io.stderr(
+      `${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 1;
   }
 }
 
 async function start(deps: CliDeps): Promise<number> {
   deps.io.stdout("Relunar CLI\n");
-  const status = await readSetupStatus({ cwd: deps.cwd, env: deps.env, configPath: configPath(deps) });
+  const status = await readSetupStatus({
+    cwd: deps.cwd,
+    env: deps.env,
+    configPath: configPath(deps),
+  });
   const relunarConfig = existsSync(join(deps.cwd, ".relunar.yml"));
   if (status.github && status.daytona && status.repoLinked && relunarConfig) {
     deps.io.stdout("Setup complete. Useful next commands:\n");
-    deps.io.stdout("  relunar doctor\n  relunar repo link owner/repo\n  relunar issues list --state open --limit 20 --json\n  relunar repro start 123\n  relunar repro 123 -- <probe-command>\n");
+    deps.io.stdout(
+      "  relunar doctor\n  relunar repo link owner/repo\n  relunar issues list --state open --limit 20 --json\n  relunar repro start 123\n  relunar repro 123 -- <probe-command>\n",
+    );
     return 0;
   }
 
-  const interactive = deps.prompt !== undefined || deps.isInteractive === true || (deps.isInteractive === undefined && process.stdin.isTTY && process.stdout.isTTY);
+  const interactive =
+    deps.prompt !== undefined ||
+    deps.isInteractive === true ||
+    (deps.isInteractive === undefined &&
+      process.stdin.isTTY &&
+      process.stdout.isTTY);
   if (interactive && (!status.github || !status.daytona)) {
     return (await runInteractiveSetup({
       cwd: deps.cwd,
@@ -152,29 +210,58 @@ async function start(deps: CliDeps): Promise<number> {
   return 1;
 }
 
-async function doctor(deps: CliDeps, flags: Record<string, string | boolean>): Promise<number> {
+async function doctor(
+  deps: CliDeps,
+  flags: Record<string, string | boolean>,
+): Promise<number> {
   const json = flagBoolean(flags, "json");
   const linkedRepo = await findLinkedRepo(deps.cwd, configPath(deps));
   const githubToken = await resolveGithubToken(deps.env);
   const daytonaKey = await resolveDaytonaApiKey(deps.env);
   const relunarConfig = existsSync(join(deps.cwd, ".relunar.yml"));
   const checks = [
-    { name: "repo linked", ok: linkedRepo !== null, detail: linkedRepo ?? "run relunar repo link owner/repo" },
-    { name: "github auth", ok: githubToken !== null, detail: githubToken ? "available" : "run gh auth login or set RELUNAR_GITHUB_TOKEN" },
-    { name: "daytona auth", ok: daytonaKey !== null, detail: daytonaKey ? "available" : "run relunar auth daytona --api-key <key>" },
-    { name: ".relunar.yml", ok: relunarConfig, detail: relunarConfig ? "found" : "run relunar init" },
+    {
+      name: "repo linked",
+      ok: linkedRepo !== null,
+      detail: linkedRepo ?? "run relunar repo link owner/repo",
+    },
+    {
+      name: "github auth",
+      ok: githubToken !== null,
+      detail: githubToken
+        ? "available"
+        : "run gh auth login or set RELUNAR_GITHUB_TOKEN",
+    },
+    {
+      name: "daytona auth",
+      ok: daytonaKey !== null,
+      detail: daytonaKey
+        ? "available"
+        : "run relunar auth daytona --api-key <key>",
+    },
+    {
+      name: ".relunar.yml",
+      ok: relunarConfig,
+      detail: relunarConfig ? "found" : "run relunar init",
+    },
   ];
 
   if (json) {
     deps.io.stdout(`${JSON.stringify(checks, null, 2)}\n`);
   } else {
-    deps.io.stdout(`${checks.map((check) => `${check.ok ? "ok" : "missing"} ${check.name}: ${check.detail}`).join("\n")}\n`);
+    deps.io.stdout(
+      `${checks.map((check) => `${check.ok ? "ok" : "missing"} ${check.name}: ${check.detail}`).join("\n")}\n`,
+    );
   }
 
   return checks.every((check) => check.ok) ? 0 : 1;
 }
 
-async function auth(subcommand: string | undefined, flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
+async function auth(
+  subcommand: string | undefined,
+  flags: Record<string, string | boolean>,
+  deps: CliDeps,
+): Promise<number> {
   if (subcommand === "github") {
     if (flagNeedsValue(flags, "token")) {
       deps.io.stderr("Missing value for --token.\n");
@@ -183,7 +270,9 @@ async function auth(subcommand: string | undefined, flags: Record<string, string
     const tokenArg = flagString(flags, "token");
     const token = tokenArg ?? (await resolveGithubToken(deps.env));
     if (!token) {
-      deps.io.stderr("No GitHub token. Run gh auth login, set RELUNAR_GITHUB_TOKEN, or pass --token.\n");
+      deps.io.stderr(
+        "No GitHub token. Run gh auth login, set RELUNAR_GITHUB_TOKEN, or pass --token.\n",
+      );
       return 1;
     }
     if (tokenArg) {
@@ -212,25 +301,41 @@ async function auth(subcommand: string | undefined, flags: Record<string, string
     const envApiKey = deps.env.RELUNAR_DAYTONA_API_KEY;
     const apiKey = apiKeyArg ?? envApiKey;
     if (!apiKey) {
-      deps.io.stderr("No Daytona API key. Pass --api-key or set RELUNAR_DAYTONA_API_KEY.\n");
+      deps.io.stderr(
+        "No Daytona API key. Pass --api-key or set RELUNAR_DAYTONA_API_KEY.\n",
+      );
       return 1;
     }
     let savedBackend: SecretBackend | void = undefined;
     if (apiKeyArg) {
-      savedBackend = await (deps.secretWriter ?? writeSecret)("daytona-api-key", apiKey);
+      savedBackend = await (deps.secretWriter ?? writeSecret)(
+        "daytona-api-key",
+        apiKey,
+      );
     }
     const config = await readGlobalConfig(configPath(deps));
-    const apiUrl = flagString(flags, "api-url") ?? deps.env.RELUNAR_DAYTONA_API_URL ?? config.daytona?.apiUrl;
-    const target = flagString(flags, "target") ?? deps.env.RELUNAR_DAYTONA_TARGET ?? config.daytona?.target;
-    await writeGlobalConfig({
-      ...config,
-      daytona: {
-        ...(apiUrl ? { apiUrl } : {}),
-        ...(target ? { target } : {}),
+    const apiUrl =
+      flagString(flags, "api-url") ??
+      deps.env.RELUNAR_DAYTONA_API_URL ??
+      config.daytona?.apiUrl;
+    const target =
+      flagString(flags, "target") ??
+      deps.env.RELUNAR_DAYTONA_TARGET ??
+      config.daytona?.target;
+    await writeGlobalConfig(
+      {
+        ...config,
+        daytona: {
+          ...(apiUrl ? { apiUrl } : {}),
+          ...(target ? { target } : {}),
+        },
       },
-    }, configPath(deps));
+      configPath(deps),
+    );
     deps.io.stdout(
-      apiKeyArg ? `Daytona auth saved to ${secretBackendLabel(savedBackend)}\n` : "Daytona auth available from environment\n",
+      apiKeyArg
+        ? `Daytona auth saved to ${secretBackendLabel(savedBackend)}\n`
+        : "Daytona auth available from environment\n",
     );
     return 0;
   }
@@ -243,7 +348,10 @@ function secretBackendLabel(backend: SecretBackend | void): string {
   return backend === "local" ? "local secret store" : "OS keychain";
 }
 
-async function repoLink(repo: string | undefined, deps: CliDeps): Promise<number> {
+async function repoLink(
+  repo: string | undefined,
+  deps: CliDeps,
+): Promise<number> {
   if (!repo || !isRepoSlug(repo)) {
     deps.io.stderr("Usage: relunar repo link owner/repo\n");
     return 1;
@@ -254,7 +362,10 @@ async function repoLink(repo: string | undefined, deps: CliDeps): Promise<number
   return 0;
 }
 
-async function issuesList(flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
+async function issuesList(
+  flags: Record<string, string | boolean>,
+  deps: CliDeps,
+): Promise<number> {
   if (flagNeedsValue(flags, "state")) {
     deps.io.stderr("Missing value for --state.\n");
     return 1;
@@ -271,19 +382,28 @@ async function issuesList(flags: Record<string, string | boolean>, deps: CliDeps
     return 1;
   }
   const token = await requireGithubToken(deps);
-  const issues = await new GitHubClient(token).listIssues(repo, state, { ...(limit ? { limit } : {}) });
+  const issues = await new GitHubClient(token).listIssues(repo, state, {
+    ...(limit ? { limit } : {}),
+  });
 
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(issues, null, 2)}\n`);
   } else if (issues.length === 0) {
     deps.io.stdout(`No ${state} issues found\n`);
   } else {
-    deps.io.stdout(`${issues.map((issue) => `#${issue.number} ${issue.title}`).join("\n")}\n`);
+    deps.io.stdout(
+      `${issues.map((issue) => `#${issue.number} ${issue.title}`).join("\n")}\n`,
+    );
   }
   return 0;
 }
 
-async function repro(args: string[], flags: Record<string, string | boolean>, passthrough: string[], deps: CliDeps): Promise<number> {
+async function repro(
+  args: string[],
+  flags: Record<string, string | boolean>,
+  passthrough: string[],
+  deps: CliDeps,
+): Promise<number> {
   const limitFlag = flagPositiveInteger(flags, "limit");
   if (limitFlag === null) {
     deps.io.stderr("Invalid limit. Use a positive integer.\n");
@@ -293,25 +413,55 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
 
   const allOpen = flagBoolean(flags, "all-open");
   if (allOpen) {
-    deps.io.stderr("Batch start is disabled for agent-driven repros. List issues, then complete one lifecycle per issue.\n");
+    deps.io.stderr(
+      "Batch start is disabled for agent-driven repros. List issues, then complete one lifecycle per issue.\n",
+    );
     return 1;
   }
 
   const legacyIssueNumber = parseIssueNumber(args[0]);
   const isOneShot = legacyIssueNumber !== null && passthrough.length > 0;
-  if (legacyIssueNumber !== null && flagBoolean(flags, "finish") && passthrough.length === 0) {
+  if (
+    legacyIssueNumber !== null &&
+    flagBoolean(flags, "finish") &&
+    passthrough.length === 0
+  ) {
     deps.io.stderr(
       "Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> -- <probe-command>\n",
     );
     return 1;
   }
-  const action = isOneShot ? "oneshot" : legacyIssueNumber !== null ? "start" : args[0];
-  if (!action || !["oneshot", "start", "exec", "upload", "sync", "finish", "comment", "cleanup", "abort"].includes(action)) {
-    deps.io.stderr("Usage: relunar repro <issue-number> [--sync] [-- <probe-command>] | start|exec|upload|sync|finish|comment|cleanup|abort\n");
+  const action = isOneShot
+    ? "oneshot"
+    : legacyIssueNumber !== null
+      ? "start"
+      : args[0];
+  if (
+    !action ||
+    ![
+      "oneshot",
+      "start",
+      "exec",
+      "upload",
+      "sync",
+      "finish",
+      "comment",
+      "cleanup",
+      "abort",
+    ].includes(action)
+  ) {
+    deps.io.stderr(
+      "Usage: relunar repro <issue-number> [--sync] [-- <probe-command>] | start|exec|upload|sync|finish|comment|cleanup|abort\n",
+    );
     return 1;
   }
-  if (action === "start" && parseIssueNumber(legacyIssueNumber !== null ? args[0] : args[1]) === null) {
-    deps.io.stderr("Usage: relunar repro <issue-number> | relunar repro start <issue-number>\n");
+  if (
+    action === "start" &&
+    parseIssueNumber(legacyIssueNumber !== null ? args[0] : args[1]) === null
+  ) {
+    deps.io.stderr(
+      "Usage: relunar repro <issue-number> | relunar repro start <issue-number>\n",
+    );
     return 1;
   }
   if (action === "oneshot") {
@@ -319,7 +469,9 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     const outcome = parseOutcome(flagString(flags, "outcome"));
     const narrative = parseFinishNarrative(flags);
     if (wantFinish && (!outcome || !narrative)) {
-      deps.io.stderr("Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] -- <probe-command>\n");
+      deps.io.stderr(
+        "Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] -- <probe-command>\n",
+      );
       return 1;
     }
   }
@@ -348,7 +500,9 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
   const globalConfig = await readGlobalConfig(configPath(deps));
   const daytonaKey = await resolveDaytonaApiKey(deps.env);
   if (!daytonaKey) {
-    throw new Error("Missing Daytona API key. Run relunar auth daytona --api-key <key> or set RELUNAR_DAYTONA_API_KEY.");
+    throw new Error(
+      "Missing Daytona API key. Run relunar auth daytona --api-key <key> or set RELUNAR_DAYTONA_API_KEY.",
+    );
   }
 
   const provider = new DaytonaSandboxProvider({
@@ -369,7 +523,14 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       report = active;
     } else {
       const issue = await client.getIssueContext(repo, issueNumber);
-      report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider, hostEnv: deps.env });
+      report = await startRepro({
+        cwd: deps.cwd,
+        repo,
+        issue,
+        githubToken: token,
+        sandboxProvider: provider,
+        hostEnv: deps.env,
+      });
     }
 
     if (report.status !== "environment_ready") {
@@ -394,7 +555,14 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
         throw error;
       }
       const issue = await client.getIssueContext(repo, issueNumber);
-      report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider, hostEnv: deps.env });
+      report = await startRepro({
+        cwd: deps.cwd,
+        repo,
+        issue,
+        githubToken: token,
+        sandboxProvider: provider,
+        hostEnv: deps.env,
+      });
       if (report.status !== "environment_ready") {
         printReport(deps, report);
         return 1;
@@ -412,30 +580,50 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     }
 
     if (wantFinish) {
-      const createdEvidenceId = [...report.commands].reverse().find((command) => command.name === "repro")?.evidenceId;
+      const createdEvidenceId = [...report.commands]
+        .reverse()
+        .find((command) => command.name === "repro")?.evidenceId;
       report = await finishRepro({
         cwd: deps.cwd,
         runId: report.runId,
         outcome: outcome!,
         ...narrative!,
-        evidenceIds: createdEvidenceId ? [createdEvidenceId] : narrative!.evidenceIds,
+        evidenceIds: createdEvidenceId
+          ? [createdEvidenceId]
+          : narrative!.evidenceIds,
         sandboxProvider: provider,
         skipEvidenceGates: flagBoolean(flags, "skip-evidence-gates"),
       });
-      if (flagBoolean(flags, "comment")) report = await publishRunComment(deps.cwd, report.runId, client, 40);
-      report = await cleanupRepro({ cwd: deps.cwd, runId: report.runId, sandboxProvider: provider });
+      if (flagBoolean(flags, "comment"))
+        report = await publishRunComment(deps.cwd, report.runId, client, 40);
+      report = await cleanupRepro({
+        cwd: deps.cwd,
+        runId: report.runId,
+        sandboxProvider: provider,
+      });
     }
   } else if (action === "start") {
-    const issueNumber = parseIssueNumber(legacyIssueNumber !== null ? args[0] : args[1]);
+    const issueNumber = parseIssueNumber(
+      legacyIssueNumber !== null ? args[0] : args[1],
+    );
     if (issueNumber === null) {
       deps.io.stderr("Usage: relunar repro start <issue-number>\n");
       return 1;
     }
     const issue = await client.getIssueContext(repo, issueNumber);
-    report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider, hostEnv: deps.env });
+    report = await startRepro({
+      cwd: deps.cwd,
+      repo,
+      issue,
+      githubToken: token,
+      sandboxProvider: provider,
+      hostEnv: deps.env,
+    });
   } else if (action === "exec") {
     if (!args[1] || passthrough.length === 0) {
-      deps.io.stderr("Usage: relunar repro exec <run-id> [--sync] [--include-untracked] -- <command>\n");
+      deps.io.stderr(
+        "Usage: relunar repro exec <run-id> [--sync] [--include-untracked] -- <command>\n",
+      );
       return 1;
     }
     report = await execRepro({
@@ -450,7 +638,9 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     });
   } else if (action === "sync") {
     if (!args[1]) {
-      deps.io.stderr("Usage: relunar repro sync <run-id> [--include-untracked]\n");
+      deps.io.stderr(
+        "Usage: relunar repro sync <run-id> [--include-untracked]\n",
+      );
       return 1;
     }
     report = await syncRepro({
@@ -461,14 +651,27 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     });
   } else if (action === "upload") {
     if (!args[1] || !args[2] || !args[3]) {
-      deps.io.stderr("Usage: relunar repro upload <run-id> <local-path> <repo-relative-path>\n");
+      deps.io.stderr(
+        "Usage: relunar repro upload <run-id> <local-path> <repo-relative-path>\n",
+      );
       return 1;
     }
-    report = await uploadReproFile({ cwd: deps.cwd, runId: args[1], localPath: args[2], remotePath: args[3], sandboxProvider: provider });
+    report = await uploadReproFile({
+      cwd: deps.cwd,
+      runId: args[1],
+      localPath: args[2],
+      remotePath: args[3],
+      sandboxProvider: provider,
+    });
   } else if (action === "finish") {
     const outcome = parseOutcome(flagString(flags, "outcome"));
     const narrative = parseFinishNarrative(flags);
-    if (!args[1] || !outcome || !narrative || (outcome !== "blocked" && !narrative.evidenceIds?.length)) {
+    if (
+      !args[1] ||
+      !outcome ||
+      !narrative ||
+      (outcome !== "blocked" && !narrative.evidenceIds?.length)
+    ) {
       deps.io.stderr(
         "Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]\n",
       );
@@ -482,27 +685,44 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       sandboxProvider: provider,
       skipEvidenceGates: flagBoolean(flags, "skip-evidence-gates"),
     });
-    if (flagBoolean(flags, "comment")) report = await publishRunComment(deps.cwd, report.runId, client, 40);
-    report = await cleanupRepro({ cwd: deps.cwd, runId: report.runId, sandboxProvider: provider });
+    if (flagBoolean(flags, "comment"))
+      report = await publishRunComment(deps.cwd, report.runId, client, 40);
+    report = await cleanupRepro({
+      cwd: deps.cwd,
+      runId: report.runId,
+      sandboxProvider: provider,
+    });
   } else if (action === "cleanup") {
     if (!args[1]) {
       deps.io.stderr("Usage: relunar repro cleanup <run-id>\n");
       return 1;
     }
-    report = await cleanupRepro({ cwd: deps.cwd, runId: args[1], sandboxProvider: provider });
+    report = await cleanupRepro({
+      cwd: deps.cwd,
+      runId: args[1],
+      sandboxProvider: provider,
+    });
   } else if (action === "abort") {
     if (!args[1]) {
       deps.io.stderr("Usage: relunar repro abort <run-id>\n");
       return 1;
     }
-    report = await abortRepro({ cwd: deps.cwd, runId: args[1], sandboxProvider: provider });
+    report = await abortRepro({
+      cwd: deps.cwd,
+      runId: args[1],
+      sandboxProvider: provider,
+    });
   } else {
-    deps.io.stderr("Usage: relunar repro start|exec|upload|sync|finish|abort\n");
+    deps.io.stderr(
+      "Usage: relunar repro start|exec|upload|sync|finish|abort\n",
+    );
     return 1;
   }
 
   printReport(deps, report);
-  return report.status === "setup_failed" || report.status === "baseline_failed" ? 1 : 0;
+  return report.status === "setup_failed" || report.status === "baseline_failed"
+    ? 1
+    : 0;
 }
 
 function printReport(deps: CliDeps, report: RunReport): void {
@@ -516,7 +736,10 @@ function parseOutcome(value: string | undefined): ReproOutcome | null {
 }
 
 /** True only when the flag is explicitly set; otherwise undefined so config defaults apply. */
-function optionalTrueFlag(flags: Record<string, string | boolean>, name: string): true | undefined {
+function optionalTrueFlag(
+  flags: Record<string, string | boolean>,
+  name: string,
+): true | undefined {
   return flagBoolean(flags, name) ? true : undefined;
 }
 
@@ -545,7 +768,10 @@ function parseFinishNarrative(flags: Record<string, string | boolean>): {
   const observed = flagString(flags, "observed")?.trim();
   const expected = flagString(flags, "expected")?.trim();
   const environmentNotes = flagString(flags, "environment")?.trim();
-  const evidenceIds = flagString(flags, "evidence")?.split(",").map((value) => value.trim()).filter(Boolean);
+  const evidenceIds = flagString(flags, "evidence")
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   if (reproSteps) narrative.reproSteps = reproSteps;
   if (observed) narrative.observed = observed;
   if (expected) narrative.expected = expected;
@@ -555,7 +781,13 @@ function parseFinishNarrative(flags: Record<string, string | boolean>): {
 }
 
 function shellCommand(args: string[]): string {
-  return args.map((arg) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`)).join(" ");
+  return args
+    .map((arg) =>
+      /^[A-Za-z0-9_./:=@%+,-]+$/.test(arg)
+        ? arg
+        : `'${arg.replaceAll("'", `'\\''`)}'`,
+    )
+    .join(" ");
 }
 
 function parseProbeOptions(flags: Record<string, string | boolean>): {
@@ -565,15 +797,30 @@ function parseProbeOptions(flags: Record<string, string | boolean>): {
   control?: { command: string; expectations: ProbeExpectations };
   claim?: string;
 } {
-  const valueFlags = ["claim", "expect-exit", "stdout-match", "stderr-match", "output-match", "file-exists", "max-duration-ms", "repeat", "reset-command", "control-command", "control-expect-exit", "control-output-match"];
+  const valueFlags = [
+    "claim",
+    "expect-exit",
+    "stdout-match",
+    "stderr-match",
+    "output-match",
+    "file-exists",
+    "max-duration-ms",
+    "repeat",
+    "reset-command",
+    "control-command",
+    "control-expect-exit",
+    "control-output-match",
+  ];
   for (const name of valueFlags) {
-    if (flagNeedsValue(flags, name)) throw new Error(`Missing value for --${name}.`);
+    if (flagNeedsValue(flags, name))
+      throw new Error(`Missing value for --${name}.`);
   }
 
   const expectations: ProbeExpectations = {};
   const exit = flagString(flags, "expect-exit");
   if (exit !== undefined) {
-    if (!/^-?\d+$/.test(exit)) throw new Error("--expect-exit must be an integer.");
+    if (!/^-?\d+$/.test(exit))
+      throw new Error("--expect-exit must be an integer.");
     expectations.exitCode = Number.parseInt(exit, 10);
   }
   const stdout = flagString(flags, "stdout-match");
@@ -582,7 +829,10 @@ function parseProbeOptions(flags: Record<string, string | boolean>): {
   if (stdout) expectations.stdoutMatches = stdout;
   if (stderr) expectations.stderrMatches = stderr;
   if (output) expectations.outputMatches = output;
-  const files = flagString(flags, "file-exists")?.split(",").map((value) => value.trim()).filter(Boolean);
+  const files = flagString(flags, "file-exists")
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   if (files?.length) expectations.filesExist = files;
 
   const maxDuration = parsePositiveFlag(flags, "max-duration-ms");
@@ -593,51 +843,81 @@ function parseProbeOptions(flags: Record<string, string | boolean>): {
   const controlExpectations: ProbeExpectations = {};
   const controlExit = flagString(flags, "control-expect-exit");
   if (controlExit !== undefined) {
-    if (!/^-?\d+$/.test(controlExit)) throw new Error("--control-expect-exit must be an integer.");
+    if (!/^-?\d+$/.test(controlExit))
+      throw new Error("--control-expect-exit must be an integer.");
     controlExpectations.exitCode = Number.parseInt(controlExit, 10);
   }
   const controlOutput = flagString(flags, "control-output-match")?.trim();
   const claim = flagString(flags, "claim")?.trim();
   if (Object.keys(expectations).length > 0 && !claim) {
-    throw new Error("Machine-asserted probes require --claim describing the issue behavior being tested.");
+    throw new Error(
+      "Machine-asserted probes require --claim describing the issue behavior being tested.",
+    );
   }
   if (controlOutput) controlExpectations.outputMatches = controlOutput;
-  if ((controlExit !== undefined || controlOutput) && !controlCommand) throw new Error("Control expectations require --control-command.");
-  if (controlCommand && Object.keys(controlExpectations).length === 0) throw new Error("--control-command requires --control-expect-exit or --control-output-match.");
+  if ((controlExit !== undefined || controlOutput) && !controlCommand)
+    throw new Error("Control expectations require --control-command.");
+  if (controlCommand && Object.keys(controlExpectations).length === 0)
+    throw new Error(
+      "--control-command requires --control-expect-exit or --control-output-match.",
+    );
   return {
     expectations,
     ...(repeat !== undefined ? { repeat } : {}),
     ...(resetCommand ? { resetCommand } : {}),
-    ...(controlCommand ? { control: { command: controlCommand, expectations: controlExpectations } } : {}),
+    ...(controlCommand
+      ? {
+          control: {
+            command: controlCommand,
+            expectations: controlExpectations,
+          },
+        }
+      : {}),
     ...(claim ? { claim } : {}),
   };
 }
 
-function parsePositiveFlag(flags: Record<string, string | boolean>, name: string): number | undefined {
+function parsePositiveFlag(
+  flags: Record<string, string | boolean>,
+  name: string,
+): number | undefined {
   const value = flagString(flags, name);
   if (value === undefined) return undefined;
-  if (!/^[1-9]\d*$/.test(value)) throw new Error(`--${name} must be a positive integer.`);
+  if (!/^[1-9]\d*$/.test(value))
+    throw new Error(`--${name} must be a positive integer.`);
   return Number.parseInt(value, 10);
 }
 
-async function runsList(flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
+async function runsList(
+  flags: Record<string, string | boolean>,
+  deps: CliDeps,
+): Promise<number> {
   const runs = await listRuns(deps.cwd);
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(runs, null, 2)}\n`);
   } else if (runs.length === 0) {
     deps.io.stdout("No runs found\n");
   } else {
-    deps.io.stdout(`${runs.map((run) => `${run.runId} ${run.status} #${run.issue.number}`).join("\n")}\n`);
+    deps.io.stdout(
+      `${runs.map((run) => `${run.runId} ${run.status} #${run.issue.number}`).join("\n")}\n`,
+    );
   }
   return 0;
 }
 
-async function runsShow(runId: string, flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
+async function runsShow(
+  runId: string,
+  flags: Record<string, string | boolean>,
+  deps: CliDeps,
+): Promise<number> {
   const run = withAgentNextStep(await readRun(deps.cwd, runId));
   if (flagBoolean(flags, "json")) {
     deps.io.stdout(`${JSON.stringify(run, null, 2)}\n`);
   } else {
-    const markdown = await readFile(join(runStoreDir(deps.cwd), runId, "report.md"), "utf8");
+    const markdown = await readFile(
+      join(runStoreDir(deps.cwd), runId, "report.md"),
+      "utf8",
+    );
     deps.io.stdout(markdown);
   }
   return 0;
@@ -657,15 +937,21 @@ async function sandboxes(
     target: deps.env.RELUNAR_DAYTONA_TARGET ?? globalConfig.daytona?.target,
   });
   if (subcommand === "list") {
-    deps.io.stdout(`${JSON.stringify(await inspectSandboxes(deps.cwd, provider), null, 2)}\n`);
+    deps.io.stdout(
+      `${JSON.stringify(await inspectSandboxes(deps.cwd, provider), null, 2)}\n`,
+    );
     return 0;
   }
   if (subcommand === "gc") {
-    const result = await gcOrphanSandboxes(deps.cwd, provider, { dryRun: !flagBoolean(flags, "confirm") });
+    const result = await gcOrphanSandboxes(deps.cwd, provider, {
+      dryRun: !flagBoolean(flags, "confirm"),
+    });
     deps.io.stdout(`${JSON.stringify(result, null, 2)}\n`);
     return 0;
   }
-  deps.io.stderr("Usage: relunar sandboxes list | relunar sandboxes gc [--confirm]\n");
+  deps.io.stderr(
+    "Usage: relunar sandboxes list | relunar sandboxes gc [--confirm]\n",
+  );
   return 1;
 }
 
@@ -712,7 +998,9 @@ async function requireRepo(deps: CliDeps): Promise<RepoSlug> {
 async function requireGithubToken(deps: CliDeps): Promise<string> {
   const token = await resolveGithubToken(deps.env);
   if (!token) {
-    throw new Error("Missing GitHub token. Run gh auth login or set RELUNAR_GITHUB_TOKEN.");
+    throw new Error(
+      "Missing GitHub token. Run gh auth login or set RELUNAR_GITHUB_TOKEN.",
+    );
   }
   return token;
 }
@@ -735,7 +1023,10 @@ function parseIssueNumber(value: string | undefined): number | null {
   return Number.parseInt(value, 10);
 }
 
-function renderSetupNextSteps(status: Awaited<ReturnType<typeof readSetupStatus>>, relunarConfig: boolean): string {
+function renderSetupNextSteps(
+  status: Awaited<ReturnType<typeof readSetupStatus>>,
+  relunarConfig: boolean,
+): string {
   const lines = ["Setup incomplete. Next commands:"];
   if (!status.github || !status.daytona) {
     lines.push("  relunar setup");
@@ -822,6 +1113,26 @@ Commands:
   relunar sandboxes gc [--confirm]
   relunar skills list|get|install [agent]
 `;
+}
+
+function contextualHelp(positionals: string[]): string {
+  const path = positionals.join(" ");
+  if (path === "repro exec") {
+    return `Usage: relunar repro exec <run-id> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] [--control-command CMD] [--reset-command CMD] -- <command>\n\nAsserted probes return an evidenceId such as probe-1. Assertion mismatches are recorded as evidence and do not make the harness command fail.\n`;
+  }
+  if (path === "repro finish") {
+    return `Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]\n\nSelect only evidence for the issue claim. Omit --evidence only for blocked when no relevant probe can run.\n`;
+  }
+  if (path === "repro start")
+    return "Usage: relunar repro start <issue-number> [--json]\n";
+  if (path === "repro comment preview")
+    return "Usage: relunar repro comment preview <run-id>\n";
+  if (path === "repro comment post")
+    return "Usage: relunar repro comment post <run-id>\n";
+  if (path === "issues" || path === "issues list") {
+    return "Usage: relunar issues list [--state open|closed|all] [--limit N] [--json]\n";
+  }
+  return helpText();
 }
 
 function configPath(deps: CliDeps): string {
