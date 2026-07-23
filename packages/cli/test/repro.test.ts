@@ -65,7 +65,8 @@ describe("repro runner", () => {
 
       expect(report.status).toBe("baseline_failed");
       expect(report.failure).toBe("bun test failed");
-      expect(sandbox.commands).toHaveLength(5);
+      expect(sandbox.commands).toHaveLength(6);
+      expect(sandbox.commands.filter((command) => command === "git rev-parse HEAD")).toHaveLength(2);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -101,7 +102,7 @@ describe("repro runner", () => {
         "npm run test:ci",
       ]);
       expect(sandbox.commands).not.toContain("test -f .relunar.yml && cat .relunar.yml || true");
-      expect(sandbox.calls.map((call) => call.timeoutSeconds)).toEqual([900, 900, 900, 900, 900]);
+      expect(sandbox.calls.map((call) => call.timeoutSeconds)).toEqual([900, 900, 900, 900, 900, 900]);
 
       const raw = await readFile(join(cwd, ".relunar", "runs", report.runId, "report.json"), "utf8");
       expect(JSON.parse(raw).commands[1].stdout).toBe("installed");
