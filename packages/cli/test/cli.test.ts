@@ -12,7 +12,7 @@ describe("cli", () => {
     const output = await invoke(["help"]);
     expect(output.code).toBe(0);
     expect(output.stdout).toContain("relunar repro start <issue-number>");
-    expect(output.stdout).toContain("relunar repro <issue-number> [--sync]");
+    expect(output.stdout).toContain("relunar repro <issue-number> --claim <issue-behavior> [--sync]");
     expect(output.stdout).toContain("relunar repro sync <run-id>");
     expect(output.stdout).toContain("relunar repro finish <run-id>");
     expect(output.stdout).toContain("Agent workflow");

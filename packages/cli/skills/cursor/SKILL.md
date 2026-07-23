@@ -55,7 +55,7 @@ relunar issues list --state open --limit 20 --json
 For each issue number `N`:
 
 1. **Start** — `relunar repro start N` (or one-shot `relunar repro N -- <probe>`). Sandbox ready ≠ Evidence.
-2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload`), then run issue-specific probes with `--claim` plus at least one assertion such as `--expect-exit`, `--output-match`, or `--file-exists`. Record the returned evidence ID. Use `--repeat` for flaky claims and a control command when causal isolation matters.
+2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload`), then run issue-specific probes with `--claim` plus at least one assertion such as `--expect-exit`, `--output-match`, or `--file-exists`. Probe commands already run in the configured repository workdir; never guess or hard-code the provider's absolute checkout path. Record the returned evidence ID. Use `--repeat` for flaky claims and a control command when causal isolation matters.
 3. **Inspect** — `relunar runs show <run-id> --json` when deciding the outcome.
 4. **Finish** — exactly one outcome: `reproduced` | `not-reproduced` | `blocked`. `reproduced` and `not-reproduced` require machine-checked Evidence. Never use `--skip-evidence-gates` for a publishable result.
 

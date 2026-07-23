@@ -11,27 +11,35 @@ export async function detectSandboxImage(cwd: string): Promise<string | undefine
   const rust = await optionalRead(join(cwd, "rust-toolchain.toml")) ?? await optionalRead(join(cwd, "rust-toolchain"));
   if (rust) {
     const version = /channel\s*=\s*"([^"]+)"/.exec(rust)?.[1] ?? rust.trim().split(/\s+/)[0];
-    if (version) return `rust:${version}-bookworm`;
+    if (version) return legacyVersion(version, 1, 70) ? "rust:bookworm" : `rust:${version}-bookworm`;
   }
 
   const python = (await optionalRead(join(cwd, ".python-version")))?.trim().split(/\s+/)[0];
-  if (python && /^\d+\.\d+(?:\.\d+)?$/.test(python)) return `python:${python}-bookworm`;
+  if (python && /^\d+\.\d+(?:\.\d+)?$/.test(python)) {
+    return legacyVersion(python, 3, 9) ? "python:bookworm" : `python:${python}-bookworm`;
+  }
 
   const go = await optionalRead(join(cwd, "go.mod"));
   const goVersion = go ? /^go\s+(\d+\.\d+(?:\.\d+)?)/m.exec(go)?.[1] : undefined;
-  if (goVersion) return `golang:${goVersion}-bookworm`;
+  if (goVersion) return legacyVersion(goVersion, 1, 20) ? "golang:bookworm" : `golang:${goVersion}-bookworm`;
 
   const packageJson = await optionalRead(join(cwd, "package.json"));
   if (packageJson) {
     try {
       const parsed = JSON.parse(packageJson) as { engines?: { node?: string } };
       const major = parsed.engines?.node ? /(?:^|[^\d])(\d{2,})(?:\D|$)/.exec(parsed.engines.node)?.[1] : undefined;
-      if (major) return `node:${major}-bookworm`;
+      if (major) return Number(major) < 18 ? "node:bookworm" : `node:${major}-bookworm`;
     } catch {
       return undefined;
     }
   }
   return undefined;
+}
+
+function legacyVersion(value: string, minimumMajor: number, minimumMinor: number): boolean {
+  const [major, minor] = value.split(".").map(Number);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
+  return major! < minimumMajor || (major === minimumMajor && minor! < minimumMinor);
 }
 
 async function optionalRead(path: string): Promise<string | undefined> {

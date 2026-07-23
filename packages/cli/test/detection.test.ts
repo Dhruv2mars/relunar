@@ -33,4 +33,22 @@ describe("sandbox image detection", () => {
       }
     }
   });
+
+  test("uses available rolling images for legacy minimum toolchains", async () => {
+    const cases: Array<[string, string, string]> = [
+      ["rust-toolchain", "1.45.0\n", "rust:bookworm"],
+      [".python-version", "3.7.9\n", "python:bookworm"],
+      ["go.mod", "module example.com/test\n\ngo 1.12\n", "golang:bookworm"],
+      ["package.json", '{"engines":{"node":">=10"}}\n', "node:bookworm"],
+    ];
+    for (const [file, content, expected] of cases) {
+      const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-legacy-"));
+      try {
+        await writeFile(join(cwd, file), content);
+        expect(await detectSandboxImage(cwd)).toBe(expected);
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    }
+  });
 });

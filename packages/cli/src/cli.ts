@@ -800,13 +800,13 @@ Commands:
   relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
   relunar repo link owner/repo
   relunar issues list [--state open|closed|all] [--limit N] [--json]
-  relunar repro <issue-number> [--sync] [--include-untracked] [--expect-exit N] [--output-match REGEX] [--repeat N] -- <probe-command>
-  relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates] -- <probe-command>
+  relunar repro <issue-number> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--output-match REGEX] [--repeat N] -- <probe-command>
+  relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates] -- <probe-command>
   relunar repro start <issue-number>
   relunar repro sync <run-id> [--include-untracked]
-  relunar repro exec <run-id> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] -- <command>
+  relunar repro exec <run-id> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] -- <command>
   relunar repro upload <run-id> <local-path> <remote-path>
-  relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]
+  relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]
   relunar repro abort <run-id>
   relunar repro comment preview <run-id>
   relunar repro comment post <run-id>

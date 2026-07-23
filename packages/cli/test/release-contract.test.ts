@@ -84,7 +84,7 @@ describe("release contract", () => {
       expect(help).toContain("Relunar CLI");
       expect(help).toContain("Agent workflow");
       expect(help).toContain("relunar repro start <issue-number>");
-      expect(help).toContain("relunar repro <issue-number> [--sync]");
+      expect(help).toContain("relunar repro <issue-number> --claim <issue-behavior> [--sync]");
       expect(help).toContain("relunar repro sync <run-id>");
       expect(help).toContain("relunar repro finish <run-id>");
     } finally {
