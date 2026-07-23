@@ -30,4 +30,5 @@ The Click, pflag, jq, picocli, Commander.js, and Bats additions were run as fix-
 - The CLI unit and integration suite covers assertion mismatch, claim-linked evidence selection, repeated probes, controls, cold-start timeouts, legacy toolchain images, workdir-relative uploads, artifact collection, service/environment setup, comment retry and concurrent idempotency, atomic config/run updates, schema migration, GitHub retry, and orphan sandbox recovery.
 - The regression manifest contains 32 issues across Rust, TypeScript, Python, Go, C, Java, JavaScript, and shell, including explicit `reproduced`, `not-reproduced`, and `blocked` disposition coverage.
 - The packed npm artifact executes its public help command.
+- Fresh npm and Bun projects both install the generated package tarball and execute its public help command.
 - `bun audit` reports no vulnerabilities after upgrading the Daytona SDK and web dependencies and pinning patched transitive releases.

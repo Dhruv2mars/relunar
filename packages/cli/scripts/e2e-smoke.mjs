@@ -10,16 +10,25 @@ const cliBin = join(cliRoot, "dist", "index.js");
 const cliSource = join(cliRoot, "src", "index.ts");
 const repo = process.env.RELUNAR_E2E_REPO ?? "Dhruv2mars/relunar";
 const issue = process.env.RELUNAR_E2E_ISSUE ?? "14";
-const commandTimeoutSeconds = parsePositiveInteger(process.env.RELUNAR_E2E_COMMAND_TIMEOUT_SECONDS ?? "900");
+const commandTimeoutSeconds = parsePositiveInteger(
+  process.env.RELUNAR_E2E_COMMAND_TIMEOUT_SECONDS ?? "900",
+);
 const daytonaApiKey = process.env.RELUNAR_DAYTONA_API_KEY;
-const githubToken = process.env.RELUNAR_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+const githubToken =
+  process.env.RELUNAR_GITHUB_TOKEN ??
+  process.env.GITHUB_TOKEN ??
+  process.env.GH_TOKEN;
 
 if (!daytonaApiKey) {
-  fail("RELUNAR_DAYTONA_API_KEY is required for the real Daytona E2E smoke test.");
+  fail(
+    "RELUNAR_DAYTONA_API_KEY is required for the real Daytona E2E smoke test.",
+  );
 }
 
 if (!githubToken) {
-  fail("RELUNAR_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN is required for the real GitHub E2E smoke test.");
+  fail(
+    "RELUNAR_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN is required for the real GitHub E2E smoke test.",
+  );
 }
 
 if (existsSync(cliSource)) {
@@ -50,7 +59,9 @@ try {
   assertCheck(doctor, "daytona auth");
   assertCheck(doctor, ".relunar.yml");
 
-  const issues = JSON.parse(run(["issues", "list", "--state", "all", "--limit", "1", "--json"]));
+  const issues = JSON.parse(
+    run(["issues", "list", "--state", "all", "--limit", "1", "--json"]),
+  );
   if (!Array.isArray(issues)) {
     fail("issues list did not return an array.");
   }
@@ -62,14 +73,57 @@ try {
   if (!started.sandbox?.id) {
     fail("repro did not record a Daytona sandbox id.");
   }
-  if (!Array.isArray(started.commands) || !started.commands.some((command) => command.name === "clone")) {
+  if (
+    !Array.isArray(started.commands) ||
+    !started.commands.some((command) => command.name === "clone")
+  ) {
     fail("repro did not run the clone command.");
   }
-  const executed = JSON.parse(run(["repro", "exec", started.runId, "--", "test", "-f", "package.json"]));
-  if (!executed.commands.some((command) => command.name === "repro" && command.status === "passed")) {
-    fail("repro did not record issue-specific command evidence.");
+  const executed = JSON.parse(
+    run([
+      "repro",
+      "exec",
+      started.runId,
+      "--claim",
+      "repository package manifest is missing",
+      "--expect-exit",
+      "1",
+      "--",
+      "test",
+      "-f",
+      "package.json",
+    ]),
+  );
+  const evidence = executed.commands.find(
+    (command) =>
+      command.name === "repro" &&
+      command.evidenceId &&
+      command.verification?.verified,
+  );
+  if (!evidence || evidence.verification.passed !== false) {
+    fail("repro did not record a verified assertion mismatch.");
   }
-  const report = JSON.parse(run(["repro", "finish", started.runId, "--outcome", "not-reproduced", "--summary", "Lifecycle smoke command passed."]));
+  const report = JSON.parse(
+    run([
+      "repro",
+      "finish",
+      started.runId,
+      "--outcome",
+      "not-reproduced",
+      "--evidence",
+      evidence.evidenceId,
+      "--summary",
+      "The package manifest was present, so the smoke claim did not reproduce.",
+      "--repro-steps",
+      "Checked for package.json in the configured repository workdir.",
+      "--observed",
+      "The file existed and the command exited 0.",
+      "--expected",
+      "The smoke claim expected the file check to exit 1.",
+      "--environment",
+      "Real GitHub repository in a Daytona Linux sandbox.",
+    ]),
+  );
   if (report.status !== "not_reproduced") {
     fail(renderReproFailure(report));
   }
@@ -138,7 +192,10 @@ function parsePositiveInteger(value) {
 
 function renderReproFailure(report) {
   const failed = Array.isArray(report.commands)
-    ? report.commands.find((command) => command.status === "failed" || command.status === "timed_out")
+    ? report.commands.find(
+        (command) =>
+          command.status === "failed" || command.status === "timed_out",
+      )
     : null;
   const lines = [
     `repro did not pass: ${report.status}`,
@@ -147,7 +204,10 @@ function renderReproFailure(report) {
   if (failed) {
     lines.push(`failed command: ${failed.name} ${failed.command}`);
     lines.push(`exitCode: ${failed.exitCode ?? "null"}`);
-    const output = [failed.stderr, failed.stdout].filter(Boolean).join("\n").trim();
+    const output = [failed.stderr, failed.stdout]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
     if (output) {
       lines.push("output:");
       lines.push(output.split("\n").slice(-40).join("\n"));
