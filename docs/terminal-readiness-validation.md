@@ -15,7 +15,7 @@ Both tests launched Cursor CLI headlessly with the installed Relunar skill and o
 | `jqlang/jq` | `use relunar to reproduce issue 3538 without posting a comment` | `issue-3538-2026-07-23T124850313Z` | `reproduced`, verified; mixed-sign non-leaf `delpaths` deleted the wrong element while the all-positive control used simultaneous semantics |
 | `remkop/picocli` | `use relunar to reproduce issue 2506 without posting a comment` | `issue-2506-2026-07-23T131326789Z` | `reproduced`, verified; exclusive optional group members and explicit required options both reported incorrect `originallyRequired` values |
 | `tj/commander.js` | `use relunar to reproduce issue 2530 without posting a comment` | `issue-2530-2026-07-23T131843982Z` | `reproduced`, verified; executable subcommand dispatch dropped the first end-of-options delimiter while the child reparsed the following operand as an option |
-| `bats-core/bats-core` | `use relunar to reproduce issue 1219 without posting a comment` | `issue-1219-2026-07-23T132838699Z` | `reproduced`, verified; a PTY default run emitted TAP while the same run with explicit `--pretty` emitted pretty output |
+| `bats-core/bats-core` | `use relunar to reproduce issue 1219 without posting a comment` | `issue-1219-2026-07-23T133447480Z` | `reproduced`, verified on a fresh clone with untouched generated config and the upgraded SDK; a PTY default run emitted TAP while the same run with explicit `--pretty` emitted pretty output |
 
 All runs persisted full commit SHAs, machine checks, environment fingerprints, complete maintainer narratives, and completed cleanup records. `relunar sandboxes list` returned an empty list after the runs, and `relunar sandboxes gc` reported no orphan to delete.
 
@@ -27,3 +27,4 @@ The Click, pflag, jq, picocli, Commander.js, and Bats additions were run as fix-
 - The CLI unit and integration suite covers assertion mismatch, claim-linked evidence selection, repeated probes, controls, cold-start timeouts, legacy toolchain images, workdir-relative uploads, artifact collection, service/environment setup, comment retry and concurrent idempotency, atomic config/run updates, schema migration, GitHub retry, and orphan sandbox recovery.
 - The regression manifest contains 30 real issues across Rust, TypeScript, Python, Go, C, Java, JavaScript, and shell with fixed expected dispositions.
 - The packed npm artifact executes its public help command.
+- `bun audit` reports no vulnerabilities after upgrading the Daytona SDK and web dependencies and pinning patched transitive releases.
