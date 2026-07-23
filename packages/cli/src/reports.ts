@@ -20,11 +20,8 @@ export function renderMarkdownReport(
   }
 
   const evidenceCommands = selectedEvidenceCommands(report);
-  const verifiedProbes = evidenceCommands.filter(
-    (command) => command.verification?.verified,
-  );
   if (report.trust) {
-    const checks = verifiedProbes.flatMap(
+    const checks = evidenceCommands.flatMap(
       (command) => command.verification?.checks ?? [],
     );
     const passed = checks.filter((check) => check.passed).length;
@@ -131,7 +128,7 @@ export function agentNextStep(report: RunReport): string {
   switch (report.status) {
     case "environment_ready":
       if (hasIssueProbeEvidence(report)) {
-        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} --claim <issue-behavior> -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --evidence probe-N --summary <text>\` (optional: --repro-steps, --observed, --expected, --environment).`;
+        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} --claim <issue-behavior> -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --evidence probe-N --summary <text>\`. Reproduced and not-reproduced outcomes also require --repro-steps, --observed, --expected, and --environment.`;
       }
       return `Environment ready only — not reproduced. Read issue.body, plan probes, then \`relunar repro exec ${report.runId} --claim <issue-behavior> -- <command>\` (or \`relunar repro ${report.issue.number} --claim <issue-behavior> -- <command>\`). Finish only after selecting claim-linked evidence with --evidence.`;
     case "passed":

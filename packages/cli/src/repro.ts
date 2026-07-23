@@ -94,6 +94,9 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
     });
     workdir = prepared.workdir;
     commandEnv = prepared.commandEnv;
+    const commandSecrets = (config.environment?.passthrough ?? [])
+      .map((name) => commandEnv[name])
+      .filter((value): value is string => Boolean(value));
     environment = prepared.fingerprint;
     commands.push(...prepared.commands);
 
@@ -107,7 +110,7 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
           timeoutSeconds: commandTimeoutSeconds,
           secret: input.githubToken,
           env: commandEnv,
-          secrets: Object.values(commandEnv),
+          secrets: commandSecrets,
         }),
       );
       if (lastFailed(commands)) {
@@ -125,7 +128,7 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
           timeoutSeconds: commandTimeoutSeconds,
           secret: input.githubToken,
           env: commandEnv,
-          secrets: Object.values(commandEnv),
+          secrets: commandSecrets,
         }),
       );
       if (lastFailed(commands)) {
@@ -169,6 +172,9 @@ export async function execRepro(input: ExecReproInput): Promise<RunReport> {
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const workdir = resolveWorkdir(config.workspace?.workdir);
   const commandEnv = resolveCommandEnv(config, input.hostEnv ?? process.env);
+  const commandSecrets = (config.environment?.passthrough ?? [])
+    .map((name) => commandEnv[name])
+    .filter((value): value is string => Boolean(value));
 
   const shouldSync = input.sync === true || config.sync?.onExec === true;
   if (shouldSync) {
@@ -191,7 +197,7 @@ export async function execRepro(input: ExecReproInput): Promise<RunReport> {
       expectations: input.expectations ?? {},
       repeat: input.repeat,
       env: commandEnv,
-      secrets: Object.values(commandEnv),
+      secrets: commandSecrets,
       resetCommand: input.resetCommand,
       control: input.control,
       evidenceId,
@@ -285,10 +291,10 @@ export async function finishRepro(
     evidenceIds: input.evidenceIds,
   });
   if (
-    input.outcome === "reproduced" &&
+    input.outcome !== "blocked" &&
     (![input.reproSteps, input.observed, input.expected, input.environmentNotes].every((value) => value?.trim()))
   ) {
-    throw new Error("A reproduced outcome requires --repro-steps, --observed, --expected, and --environment.");
+    throw new Error("A conclusive outcome requires --repro-steps, --observed, --expected, and --environment.");
   }
   report.artifacts = await collectArtifacts({
     cwd: input.cwd,

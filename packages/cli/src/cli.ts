@@ -442,6 +442,7 @@ async function repro(
       "oneshot",
       "start",
       "exec",
+      "evidence",
       "upload",
       "sync",
       "finish",
@@ -451,7 +452,7 @@ async function repro(
     ].includes(action)
   ) {
     deps.io.stderr(
-      "Usage: relunar repro <issue-number> [--sync] [-- <probe-command>] | start|exec|upload|sync|finish|comment|cleanup|abort\n",
+      "Usage: relunar repro <issue-number> [--sync] [-- <probe-command>] | start|exec|evidence|upload|sync|finish|comment|cleanup|abort\n",
     );
     return 1;
   }
@@ -468,7 +469,7 @@ async function repro(
     const wantFinish = flagBoolean(flags, "finish");
     const outcome = parseOutcome(flagString(flags, "outcome"));
     const narrative = parseFinishNarrative(flags);
-    if (wantFinish && (!outcome || !narrative)) {
+    if (wantFinish && (!outcome || !narrative || (outcome !== "blocked" && !hasCompleteNarrative(narrative)))) {
       deps.io.stderr(
         "Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] -- <probe-command>\n",
       );
@@ -483,6 +484,21 @@ async function repro(
     }
     deps.io.stdout(await previewPublication(deps.cwd, args[2], 40));
     return 0;
+  }
+
+  if (action === "evidence") {
+    if (!args[1]) {
+      deps.io.stderr("Usage: relunar repro evidence <run-id> [--json]\n");
+      return 1;
+    }
+    return await printEvidence(deps, args[1], flagBoolean(flags, "json"));
+  }
+
+  if (action === "cleanup" && args[1]) {
+    const existing = await readRun(deps.cwd, args[1]);
+    if (existing.status === "environment_ready") {
+      throw new Error("Cannot clean up an unfinished run. Retry `repro finish`, or use `repro abort` to intentionally stop it.");
+    }
   }
 
   const repo = await requireRepo(deps);
@@ -670,6 +686,7 @@ async function repro(
       !args[1] ||
       !outcome ||
       !narrative ||
+      (outcome !== "blocked" && !hasCompleteNarrative(narrative)) ||
       (outcome !== "blocked" && !narrative.evidenceIds?.length)
     ) {
       deps.io.stderr(
@@ -714,7 +731,7 @@ async function repro(
     });
   } else {
     deps.io.stderr(
-      "Usage: relunar repro start|exec|upload|sync|finish|abort\n",
+      "Usage: relunar repro start|exec|evidence|upload|sync|finish|abort\n",
     );
     return 1;
   }
@@ -727,6 +744,29 @@ async function repro(
 
 function printReport(deps: CliDeps, report: RunReport): void {
   deps.io.stdout(`${JSON.stringify(withAgentNextStep(report), null, 2)}\n`);
+}
+
+async function printEvidence(deps: CliDeps, runId: string, json: boolean): Promise<number> {
+  const report = await readRun(deps.cwd, runId);
+  const evidence = report.commands
+    .filter((command) => command.evidenceId)
+    .map((command) => ({
+      evidenceId: command.evidenceId!,
+      claim: command.claim ?? null,
+      passed: command.verification?.passed ?? false,
+      verified: command.verification?.verified ?? false,
+      attempt: command.verification?.attempt ?? 1,
+      totalAttempts: command.verification?.totalAttempts ?? 1,
+      command: command.command,
+    }));
+  if (json) {
+    deps.io.stdout(`${JSON.stringify(evidence, null, 2)}\n`);
+  } else if (evidence.length === 0) {
+    deps.io.stdout("No asserted probe evidence found\n");
+  } else {
+    deps.io.stdout(`${evidence.map((item) => `${item.evidenceId} ${item.passed ? "passed" : "failed"} ${item.claim ?? item.command}`).join("\n")}\n`);
+  }
+  return 0;
 }
 
 function parseOutcome(value: string | undefined): ReproOutcome | null {
@@ -778,6 +818,15 @@ function parseFinishNarrative(flags: Record<string, string | boolean>): {
   if (environmentNotes) narrative.environmentNotes = environmentNotes;
   if (evidenceIds?.length) narrative.evidenceIds = evidenceIds;
   return narrative;
+}
+
+function hasCompleteNarrative(narrative: NonNullable<ReturnType<typeof parseFinishNarrative>>): boolean {
+  return Boolean(
+    narrative.reproSteps?.trim() &&
+      narrative.observed?.trim() &&
+      narrative.expected?.trim() &&
+      narrative.environmentNotes?.trim(),
+  );
 }
 
 function shellCommand(args: string[]): string {
@@ -1068,6 +1117,7 @@ Agent workflow:
     --output-match REGEX, --file-exists PATH[,PATH], --max-duration-ms N, --repeat N.
     Optional: --control-command CMD with control assertion; --reset-command CMD between repeats.
   Finish derives trust from assertions. Arbitrary output is never verified proof.
+  Reproduced and not-reproduced outcomes require all four narrative fields.
 
   environment_ready means the sandbox is ready — not that the issue was reproduced.
   Put finish flags before \`--\` when combining with one-shot:
@@ -1101,12 +1151,13 @@ Commands:
   relunar repro start <issue-number>
   relunar repro sync <run-id> [--include-untracked]
   relunar repro exec <run-id> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] -- <command>
+  relunar repro evidence <run-id> [--json]
   relunar repro upload <run-id> <local-path> <repo-relative-path>
   relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]
   relunar repro abort <run-id>
   relunar repro comment preview <run-id>
   relunar repro comment post <run-id>
-  relunar repro cleanup <run-id>
+  relunar repro cleanup <run-id>  # finished runs only; use abort for active runs
   relunar runs list [--json]
   relunar runs show <run-id> [--json]
   relunar sandboxes list
@@ -1121,8 +1172,10 @@ function contextualHelp(positionals: string[]): string {
     return `Usage: relunar repro exec <run-id> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] [--control-command CMD] [--reset-command CMD] -- <command>\n\nAsserted probes return an evidenceId such as probe-1. Assertion mismatches are recorded as evidence and do not make the harness command fail.\n`;
   }
   if (path === "repro finish") {
-    return `Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]\n\nSelect only evidence for the issue claim. Omit --evidence only for blocked when no relevant probe can run.\n`;
+    return `Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]\n\nSelect only evidence for the issue claim. Omit --evidence only for blocked when no relevant probe can run. Reproduced and not-reproduced outcomes require all four narrative fields.\n`;
   }
+  if (path === "repro evidence")
+    return "Usage: relunar repro evidence <run-id> [--json]\n\nLists exact selectable evidence IDs, claims, assertion status, and attempts without requiring GitHub or Daytona access.\n";
   if (path === "repro start")
     return "Usage: relunar repro start <issue-number> [--json]\n";
   if (path === "repro comment preview")

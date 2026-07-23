@@ -4,7 +4,7 @@ Validation date: 2026-07-23. CLI branch: `feat/terminal-real-world-readiness`.
 
 ## User-path tests
 
-Both tests launched Cursor CLI headlessly with the installed Relunar skill and only a short user prompt. Neither test posted a GitHub comment.
+All tests launched Cursor CLI headlessly with the installed Relunar skill and only a short user prompt. No test posted a GitHub comment.
 
 | Testbed                                       | Prompt                                                          | Run                                | Result                                                                                                                                                                                        |
 | --------------------------------------------- | --------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -20,12 +20,16 @@ Both tests launched Cursor CLI headlessly with the installed Relunar skill and o
 | `Dhruv2mars/ripgrep-relunar-testbed`          | `use relunar to reproduce issue 13 without posting a comment`   | `issue-13-2026-07-23T135931534Z`   | `not-reproduced`, verified after the report-selection fix; the asserted exit status 2 mismatched the observed status 0 while version output remained present                                  |
 | `Dhruv2mars/ripgrep-relunar-testbed`          | `use relunar to reproduce issue 14 without posting a comment`   | `issue-14-2026-07-23T134606168Z`   | `blocked`; the private corpus, proprietary filesystem plugin, command, dump, and stack were unavailable, while a trivial search proved the built CLI healthy                                  |
 | `Dhruv2mars/service-monorepo-relunar-testbed` | `use relunar to reproduce issue 1 without posting a comment`    | `issue-1-2026-07-23T140953464Z`    | `reproduced`, verified from a fresh clone with untouched generated config; the Bun workspace CLI obtained its prefix from a live mock HTTP service and lowercased `Ada`                       |
+| `BurntSushi/ripgrep` (fresh clone)            | `use relunar to reproduce issue 13 without posting a comment`   | `issue-13-2026-07-23T160718465Z`   | `not-reproduced`, verified from untouched generated config; Cargo metadata selected the Rust image automatically, version output remained present, and the asserted exit 2 mismatched exit 0 |
+| `bats-core/bats-core` (fresh clone)            | `use relunar to reproduce issue 1219 without posting a comment` | `issue-1219-2026-07-23T162418540Z` | `reproduced`, verified after the final usability fixes; generated baseline passed unchanged, concise evidence listing identified `probe-11`, no comment was posted, and cleanup completed     |
 
 All runs persisted full commit SHAs, machine checks, environment fingerprints, complete maintainer narratives, and completed cleanup records. `relunar sandboxes list` returned an empty list after the runs, and `relunar sandboxes gc` reported no orphan to delete.
 
 Cursor also ran `use relunar to preview the issue comment for run issue-13-2026-07-23T135931534Z without posting it`. The preview centered only the selected issue-claim evidence, reported the failed expected exit 2 and passing version-output check, and did not post a comment.
 
 The Click, pflag, jq, picocli, Commander.js, and Bats additions were run as fix-and-retest exercises. The first attempts exposed concurrent global-config corruption, Bun-only init defaults, a 120-second cold-start limit, unavailable legacy image tags, missing native/Java/shell detection, Gradle wrapper network dependence, ambiguous sandbox paths, sandbox-root-relative uploads, file assertions evaluated outside the repository workdir, conventional `--help` dispatch failure, and an issue-sensitive Bats baseline. Each harness defect received a regression test and implementation fix. Fresh runs then completed from the same one-line prompts with verified evidence, no comments, and cleanup. No reproduction command or issue-specific hint was supplied to Cursor.
+
+The final fresh Rust and Bats passes additionally exposed Cargo-only image detection, an invalid recursive Bats baseline, evidence-ID discoverability under large reports, and destructive cleanup after a rejected finish. Relunar now detects Cargo projects without a toolchain file, uses a fast valid Bats readiness check, provides `repro evidence`, and refuses direct cleanup of unfinished runs. Cursor then completed both one-line workflows without config edits or operator guidance.
 
 ## Automated gates
 

@@ -69,10 +69,7 @@ export class GitHubClient {
       this.request<GitHubIssue>(`/repos/${repo}/issues/${issueNumber}`, {
         method: "GET",
       }),
-      this.request<GitHubIssueComment[]>(
-        `/repos/${repo}/issues/${issueNumber}/comments?per_page=100`,
-        { method: "GET" },
-      ),
+      this.listIssueComments(repo, issueNumber),
     ]);
     const normalizedComments = comments.map((comment) => ({
       author: comment.user?.login ?? "unknown",
@@ -112,8 +109,33 @@ export class GitHubClient {
     return response.html_url;
   }
 
+  async findComment(
+    repo: RepoSlug,
+    issueNumber: number,
+    marker: string,
+  ): Promise<string | null> {
+    const comments = await this.listIssueComments(repo, issueNumber);
+    return comments.find((comment) => comment.body?.includes(marker))?.html_url ?? null;
+  }
+
+  private async listIssueComments(
+    repo: RepoSlug,
+    issueNumber: number,
+  ): Promise<GitHubIssueComment[]> {
+    const comments: GitHubIssueComment[] = [];
+    for (let page = 1; ; page += 1) {
+      const batch = await this.request<GitHubIssueComment[]>(
+        `/repos/${repo}/issues/${issueNumber}/comments?per_page=100&page=${page}`,
+        { method: "GET" },
+      );
+      comments.push(...batch);
+      if (batch.length < 100) return comments;
+    }
+  }
+
   private async request<T>(path: string, init: RequestInit): Promise<T> {
-    const maxAttempts = this.retry.maxAttempts ?? 3;
+    const retryable = init.method === "GET" || init.method === "HEAD";
+    const maxAttempts = retryable ? (this.retry.maxAttempts ?? 3) : 1;
     const sleep =
       this.retry.sleep ??
       ((milliseconds: number) =>

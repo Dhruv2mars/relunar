@@ -13,6 +13,7 @@ describe("retryable publication", () => {
       await writeRun(cwd, report("verified"), 40);
       let attempts = 0;
       const publisher = {
+        findComment: async () => null,
         createComment: async () => {
           attempts += 1;
           if (attempts === 1) throw new Error("GitHub unavailable");
@@ -43,7 +44,7 @@ describe("retryable publication", () => {
     try {
       await writeRun(cwd, report("unverified"), 40);
       await expect(
-        publishRunComment(cwd, "issue-1-test", { createComment: async () => "unused" }, 40),
+        publishRunComment(cwd, "issue-1-test", { findComment: async () => null, createComment: async () => "unused" }, 40),
       ).rejects.toThrow("Unverified runs cannot be posted");
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -68,6 +69,7 @@ describe("retryable publication", () => {
       await writeRun(cwd, report("verified"), 40);
       let calls = 0;
       const publisher = {
+        findComment: async () => null,
         createComment: async () => {
           calls += 1;
           await Bun.sleep(30);
@@ -83,6 +85,43 @@ describe("retryable publication", () => {
       expect(calls).toBe(1);
       expect(left.publication?.status).toBe("posted");
       expect(right.publication?.status).toBe("posted");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("recovers an accepted comment after losing the create response", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-publication-recovery-"));
+    try {
+      await writeRun(cwd, report("verified"), 40);
+      let remoteBody: string | null = null;
+      let creates = 0;
+      const publisher = {
+        findComment: async (_repo: string, _issue: number, marker: string) =>
+          remoteBody?.includes(marker) ? "https://github.com/owner/repo/issues/1#issuecomment-2" : null,
+        createComment: async (_repo: string, _issue: number, body: string) => {
+          creates += 1;
+          remoteBody = body;
+          throw new Error("connection lost after accept");
+        },
+      };
+      await expect(publishRunComment(cwd, "issue-1-test", publisher, 40)).rejects.toThrow("connection lost");
+      const recovered = await publishRunComment(cwd, "issue-1-test", publisher, 40);
+      expect(recovered.publication).toMatchObject({ status: "posted", attempts: 2 });
+      expect(creates).toBe(1);
+      expect(String(remoteBody)).toContain("<!-- relunar-run:issue-1-test -->");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects preview when the maintainer narrative is incomplete", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-publication-narrative-"));
+    try {
+      const incomplete = report("verified");
+      incomplete.environmentNotes = " ";
+      await writeRun(cwd, incomplete, 40);
+      await expect(previewPublication(cwd, "issue-1-test", 40)).rejects.toThrow("missing environment");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

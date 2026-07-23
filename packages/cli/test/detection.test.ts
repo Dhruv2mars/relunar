@@ -19,6 +19,7 @@ describe("sandbox image detection", () => {
   test("detects rust, python, go, and node toolchains", async () => {
     const cases: Array<[string, string, string]> = [
       ["rust-toolchain.toml", '[toolchain]\nchannel = "1.80.1"\n', "rust:1.80.1-bookworm"],
+      ["Cargo.toml", '[package]\nname = "cli"\nrust-version = "1.96"\n', "rust:1.96-bookworm"],
       [".python-version", "3.12.4\n", "python:3.12.4-bookworm"],
       ["go.mod", "module example.com/test\n\ngo 1.23\n", "golang:1.23-bookworm"],
       ["package.json", '{"engines":{"node":">=22"}}\n', "node:22-bookworm"],
@@ -31,6 +32,16 @@ describe("sandbox image detection", () => {
       } finally {
         await rm(cwd, { recursive: true, force: true });
       }
+    }
+  });
+
+  test("uses the rolling Rust image when Cargo.toml does not declare a minimum", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-cargo-"));
+    try {
+      await writeFile(join(cwd, "Cargo.toml"), '[package]\nname = "cli"\n');
+      expect(await detectSandboxImage(cwd)).toBe("rust:bookworm");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
     }
   });
 

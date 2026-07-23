@@ -40,8 +40,9 @@ relunar repro 123 --claim "Issue crashes on the supplied fixture" --expect-exit 
 
 # Or multi-step lifecycle
 relunar repro start 123
-relunar repro upload <run-id> ./repro.ts repo/repro.ts
+relunar repro upload <run-id> ./repro.ts repro.ts
 relunar repro exec <run-id> --claim "Empty config crashes with Error: boom" --expect-exit 1 --stderr-match "Error: boom" --repeat 3 -- bun repro.ts
+relunar repro evidence <run-id> --json
 relunar runs show <run-id> --json
 
 # Agent judges outcome from probe evidence (environment_ready ≠ reproduced)
@@ -184,6 +185,7 @@ relunar repro <issue-number> -- <probe-command>
 relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] -- <probe-command>
 relunar repro start <issue-number>
 relunar repro exec <run-id> -- <command>
+relunar repro evidence <run-id> [--json]
 relunar repro upload <run-id> <local-path> <remote-path>
 relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment]
 relunar repro abort <run-id>

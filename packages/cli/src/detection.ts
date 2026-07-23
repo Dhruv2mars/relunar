@@ -13,6 +13,13 @@ export async function detectSandboxImage(cwd: string): Promise<string | undefine
     const version = /channel\s*=\s*"([^"]+)"/.exec(rust)?.[1] ?? rust.trim().split(/\s+/)[0];
     if (version) return legacyVersion(version, 1, 70) ? "rust:bookworm" : `rust:${version}-bookworm`;
   }
+  const cargo = await optionalRead(join(cwd, "Cargo.toml"));
+  if (cargo) {
+    const version = /^rust-version\s*=\s*["']([^"']+)["']/m.exec(cargo)?.[1];
+    return version
+      ? (legacyVersion(version, 1, 70) ? "rust:bookworm" : `rust:${version}-bookworm`)
+      : "rust:bookworm";
+  }
 
   const python = (await optionalRead(join(cwd, ".python-version")))?.trim().split(/\s+/)[0];
   if (python && /^\d+\.\d+(?:\.\d+)?$/.test(python)) {

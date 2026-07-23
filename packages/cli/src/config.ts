@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
 import type { GlobalConfig, RelunarConfig, RepoSlug } from "./types";
+import { lockOwnerIsDead } from "./locks";
 
 const evidenceGateSchema = z
   .object({
@@ -347,7 +348,7 @@ async function detectInitConfig(cwd: string): Promise<RelunarConfig> {
       setup: [],
       baseline: [
         "bin/bats --version",
-        "bin/bats --tap test/fixtures/bats/passing.bats",
+        "test -x bin/bats",
       ],
     };
   }
@@ -457,6 +458,7 @@ async function withConfigLock<T>(
   while (true) {
     try {
       const handle = await open(lockPath, "wx");
+      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
       await handle.close();
       try {
         return await action();
@@ -470,6 +472,10 @@ async function withConfigLock<T>(
         error.code === "EEXIST"
       ))
         throw error;
+      if (await lockOwnerIsDead(lockPath)) {
+        await unlink(lockPath).catch(() => undefined);
+        continue;
+      }
       if (Date.now() >= deadline)
         throw new Error("Timed out waiting for Relunar global config lock.");
       await new Promise((resolve) => setTimeout(resolve, 10));

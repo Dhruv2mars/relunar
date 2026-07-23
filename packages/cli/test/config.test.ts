@@ -283,7 +283,7 @@ describe("relunar config", () => {
         setup: [],
         baseline: [
           "bin/bats --version",
-          "bin/bats --tap test/fixtures/bats/passing.bats",
+          "test -x bin/bats",
         ],
       });
     } finally {
@@ -340,6 +340,18 @@ describe("relunar config", () => {
       const config = await readGlobalConfig(path);
       expect(Object.keys(config.repoLinks)).toHaveLength(20);
       expect(JSON.parse(await readFile(path, "utf8"))).toEqual(config);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reclaims a global config lock left by a dead process", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-config-stale-lock-"));
+    try {
+      const path = join(dir, "config.json");
+      await Bun.write(`${path}.lock`, `999999 ${new Date().toISOString()}\n`);
+      await linkRepo(join(dir, "repo"), "owner/repo", path);
+      expect((await readGlobalConfig(path)).repoLinks).toHaveProperty(join(dir, "repo"));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

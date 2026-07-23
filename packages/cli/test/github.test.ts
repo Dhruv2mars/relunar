@@ -41,6 +41,15 @@ describe("GitHubClient", () => {
     );
     expect(attempts).toBe(1);
   });
+  test("does not retry comment creation after an ambiguous transient response", async () => {
+    let attempts = 0;
+    const client = new GitHubClient("token", (async () => {
+      attempts += 1;
+      return new Response("temporary", { status: 503, statusText: "Unavailable" });
+    }) as unknown as typeof fetch, { sleep: async () => undefined });
+    await expect(client.createComment("owner/repo", 7, "body")).rejects.toThrow("GitHub API 503");
+    expect(attempts).toBe(1);
+  });
   test("fetches maintainer issue context including labels, comments, and attachments", async () => {
     const fetchImpl = async (url: string | URL | Request) => {
       const path = new URL(String(url)).pathname;
@@ -88,6 +97,24 @@ describe("GitHubClient", () => {
       fetchImpl as typeof fetch,
     ).getIssueContext("owner/repo", 1);
     expect(context.attachments).toEqual(["https://example.com/repro.ts"]);
+  });
+  test("paginates maintainer comments and finds markers on later pages", async () => {
+    const requests: string[] = [];
+    const fetchImpl = async (url: string | URL | Request) => {
+      const parsed = new URL(String(url));
+      requests.push(parsed.href);
+      if (!parsed.pathname.endsWith("/comments")) return jsonResponse(githubIssue(1));
+      if (parsed.searchParams.get("page") === "1") {
+        return jsonResponse(Array.from({ length: 100 }, (_, index) => githubComment(index + 1, `comment ${index + 1}`)));
+      }
+      return jsonResponse([githubComment(101, "<!-- relunar-run:issue-1-test -->")]);
+    };
+    const client = new GitHubClient("token", fetchImpl as typeof fetch);
+    const context = await client.getIssueContext("owner/repo", 1);
+    expect(context.comments).toHaveLength(101);
+    expect(await client.findComment("owner/repo", 1, "<!-- relunar-run:issue-1-test -->"))
+      .toBe("https://github.com/owner/repo/issues/1#issuecomment-101");
+    expect(requests.filter((url) => url.includes("/comments"))).toHaveLength(4);
   });
   test("paginates issues and filters pull requests", async () => {
     const requests: string[] = [];
@@ -151,6 +178,14 @@ function githubIssue(number: number) {
     body: `Body ${number}`,
     state: "open",
     html_url: `https://github.com/owner/repo/issues/${number}`,
+  };
+}
+
+function githubComment(number: number, body: string) {
+  return {
+    user: { login: "maintainer" }, body,
+    created_at: "2026-01-02T00:00:00Z",
+    html_url: `https://github.com/owner/repo/issues/1#issuecomment-${number}`,
   };
 }
 

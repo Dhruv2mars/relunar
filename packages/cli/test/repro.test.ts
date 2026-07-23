@@ -153,6 +153,30 @@ describe("repro runner", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("redacts passthrough secrets without corrupting ordinary environment values", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-repro-redaction-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), [
+        "version: 1", "environment:", "  variables:", "    CI: 'true'",
+        "  passthrough:", "    - TEST_SECRET", "setup:", "  - echo true secret-value",
+        "baseline: []", "",
+      ].join("\n"), "utf8");
+      const sandbox = new FakeSandbox([
+        { match: "git clone", result: ok("") },
+        { match: "git rev-parse", result: ok("abc123\n") },
+        { match: "echo true", result: ok("true secret-value") },
+      ]);
+      const report = await runRepro({
+        cwd, repo: "owner/repo", issue: sampleIssue(), githubToken: "secret-token",
+        hostEnv: { TEST_SECRET: "secret-value" }, sandboxProvider: provider(sandbox),
+      });
+      expect(report.commands[1]?.command).toBe("echo true [redacted]");
+      expect(report.commands[1]?.stdout).toBe("true [redacted]");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
 
 function sampleIssue(): Issue {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runCli } from "../src/cli";
@@ -16,6 +16,7 @@ describe("cli", () => {
       "relunar repro <issue-number> --claim <issue-behavior> [--sync]",
     );
     expect(output.stdout).toContain("relunar repro sync <run-id>");
+    expect(output.stdout).toContain("relunar repro evidence <run-id>");
     expect(output.stdout).toContain("relunar repro finish <run-id>");
     expect(output.stdout).toContain("Agent workflow");
     expect(output.stdout).toContain(
@@ -47,6 +48,10 @@ describe("cli", () => {
     const finish = await invoke(["repro", "finish", "--help"]);
     expect(finish.code).toBe(0);
     expect(finish.stdout).toContain("Select only evidence for the issue claim");
+
+    const evidence = await invoke(["repro", "evidence", "--help"]);
+    expect(evidence.code).toBe(0);
+    expect(evidence.stdout).toContain("exact selectable evidence IDs");
   });
 
   test("probe assertion flags validate before auth and network work", async () => {
@@ -63,6 +68,62 @@ describe("cli", () => {
       expect(output.code).toBe(1);
       expect(output.stderr).toContain("--repeat must be a positive integer");
       expect(output.stderr).not.toContain("No repo linked");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("lists concise evidence without auth or sandbox access", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-evidence-"));
+    try {
+      const runDir = join(dir, ".relunar", "runs", "run-1");
+      await mkdir(runDir, { recursive: true });
+      await Bun.write(join(runDir, "report.json"), JSON.stringify({
+        schemaVersion: 2,
+        runId: "run-1",
+        trust: "unverified",
+        commands: [{
+          name: "repro",
+          command: "echo panic",
+          claim: "Command emits panic",
+          evidenceId: "probe-1",
+          verification: { verified: true, passed: true, attempt: 1, totalAttempts: 1, checks: [] },
+        }],
+      }));
+      const output = await invoke(["repro", "evidence", "run-1", "--json"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_SKIP_GH_AUTH_TOKEN: "1",
+      });
+      expect(output.code).toBe(0);
+      expect(JSON.parse(output.stdout)).toEqual([expect.objectContaining({
+        evidenceId: "probe-1",
+        claim: "Command emits panic",
+        passed: true,
+      })]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses to clean up an unfinished run before auth or sandbox access", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-cleanup-guard-"));
+    try {
+      const runDir = join(dir, ".relunar", "runs", "run-1");
+      await mkdir(runDir, { recursive: true });
+      await Bun.write(join(runDir, "report.json"), JSON.stringify({
+        schemaVersion: 2,
+        runId: "run-1",
+        status: "environment_ready",
+        trust: "unverified",
+        commands: [],
+      }));
+      const output = await invoke(["repro", "cleanup", "run-1"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_SKIP_GH_AUTH_TOKEN: "1",
+      });
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Cannot clean up an unfinished run");
+      expect(output.stderr).toContain("repro abort");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

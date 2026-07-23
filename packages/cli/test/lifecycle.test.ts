@@ -73,7 +73,7 @@ describe("agent-driven repro lifecycle", () => {
     }
   });
 
-  test("cannot finish from an unrelated passing diagnostic", async () => {
+  test("links only explicitly selected passing evidence to the outcome", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-claim-link-"));
     try {
       await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
@@ -81,9 +81,9 @@ describe("agent-driven repro lifecycle", () => {
       const provider = fakeProvider(sandbox);
       const started = await startRepro(input(cwd, provider));
       await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", expectations: { outputMatches: "missing" }, claim: "Compiler crashes", sandboxProvider: provider });
-      await execRepro({ cwd, runId: started.runId, command: "echo PROBE_COMPLETE", expectations: { outputMatches: "PROBE_COMPLETE" }, claim: "Environment can execute shell commands", sandboxProvider: provider });
+      await execRepro({ cwd, runId: started.runId, command: "echo PROBE_COMPLETE", expectations: { outputMatches: "ok" }, claim: "Environment can execute shell commands", sandboxProvider: provider });
 
-      await expect(finishRepro({
+      const finished = await finishRepro({
         cwd,
         runId: started.runId,
         outcome: "reproduced",
@@ -92,9 +92,12 @@ describe("agent-driven repro lifecycle", () => {
         observed: "crash",
         expected: "no crash",
         environmentNotes: "test",
-        evidenceIds: ["probe-1"],
+        evidenceIds: ["probe-2"],
         sandboxProvider: provider,
-      })).rejects.toThrow("verified passing probe assertion");
+      });
+      expect(finished.selectedEvidenceIds).toEqual(["probe-2"]);
+      expect(finished.commands.find((command) => command.evidenceId === "probe-2")?.claim)
+        .toBe("Environment can execute shell commands");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -169,6 +172,10 @@ describe("agent-driven repro lifecycle", () => {
         runId: started.runId,
         outcome: "not_reproduced",
         summary: "Expected crash signature did not occur.",
+        reproSteps: "1. Run bun repro.ts",
+        observed: "Crash signature absent",
+        expected: "Compiler crash",
+        environmentNotes: "bun test",
         evidenceIds: ["probe-1"],
         sandboxProvider: provider,
       });
@@ -178,7 +185,7 @@ describe("agent-driven repro lifecycle", () => {
     }
   });
 
-  test("reproduced requires complete maintainer narrative", async () => {
+  test("conclusive outcomes require complete maintainer narrative", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-narrative-"));
     try {
       await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
@@ -280,7 +287,7 @@ describe("agent-driven repro lifecycle", () => {
       expect(await findActiveRunForIssue(cwd, 123, "other/repo")).toBeNull();
 
       await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", expectations: { outputMatches: "missing signature" }, claim: "Compiler crashes", sandboxProvider: provider });
-      await finishRepro({ cwd, runId: started.runId, outcome: "not_reproduced", summary: "Did not crash.", evidenceIds: ["probe-1"], sandboxProvider: provider });
+      await finishRepro({ cwd, runId: started.runId, outcome: "not_reproduced", summary: "Did not crash.", reproSteps: "1. Run bun repro.ts", observed: "No crash", expected: "Compiler crash", environmentNotes: "bun test", evidenceIds: ["probe-1"], sandboxProvider: provider });
       expect(await findActiveRunForIssue(cwd, 123, "owner/repo")).toBeNull();
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -294,11 +301,17 @@ describe("agent-driven repro lifecycle", () => {
       const sandbox = new FakeSandbox();
       const provider = fakeProvider(sandbox);
       const started = await startRepro(input(cwd, provider));
+      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", expectations: { outputMatches: "missing" }, claim: "Compiler crashes", sandboxProvider: provider });
       const finished = await finishRepro({
         cwd,
         runId: started.runId,
-        outcome: "blocked",
-        summary: "External service unavailable.",
+        outcome: "not_reproduced",
+        summary: "Crash signature was absent.",
+        reproSteps: "1. Run bun repro.ts",
+        observed: "Crash signature absent",
+        expected: "Compiler crash",
+        environmentNotes: "bun test",
+        evidenceIds: ["probe-1"],
         skipEvidenceGates: true,
         sandboxProvider: provider,
       });

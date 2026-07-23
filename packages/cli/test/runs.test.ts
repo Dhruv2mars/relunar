@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readRun, updateRun, writeRun } from "../src/runs";
@@ -42,6 +42,20 @@ describe("durable run store", () => {
       const migrated = await readRun(cwd, "issue-1-test");
       expect(migrated.schemaVersion).toBe(2);
       expect(migrated.trust).toBe("unverified");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("reclaims a run lock left by a dead process", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-runs-stale-lock-"));
+    try {
+      await writeRun(cwd, report(), 40);
+      const dir = join(cwd, ".relunar", "runs", "issue-1-test");
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "run.lock"), `999999 ${new Date().toISOString()}\n`);
+      await updateRun(cwd, "issue-1-test", 40, (current) => ({ ...current, summary: "recovered" }));
+      expect((await readRun(cwd, "issue-1-test")).summary).toBe("recovered");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

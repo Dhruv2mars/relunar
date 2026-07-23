@@ -4,6 +4,7 @@ import type { RepoSlug, RunReport } from "./types";
 
 export type IssueCommentPublisher = {
   createComment(repo: RepoSlug, issueNumber: number, body: string): Promise<string>;
+  findComment(repo: RepoSlug, issueNumber: number, marker: string): Promise<string | null>;
 };
 
 export async function previewPublication(cwd: string, runId: string, maxLogLines: number): Promise<string> {
@@ -33,11 +34,17 @@ export async function publishRunComment(
     };
     await writeRun(cwd, report, maxLogLines);
 
+    const marker = `<!-- relunar-run:${report.runId} -->`;
     try {
-      const commentUrl = await publisher.createComment(
+      const existingUrl = await publisher.findComment(
         report.repo,
         report.issue.number,
-        renderMarkdownReport(report, maxLogLines),
+        marker,
+      );
+      const commentUrl = existingUrl ?? await publisher.createComment(
+        report.repo,
+        report.issue.number,
+        `${renderMarkdownReport(report, maxLogLines)}\n${marker}\n`,
       );
       report.publication = {
         status: "posted",
@@ -70,7 +77,15 @@ function assertPublishable(report: RunReport): void {
   if (report.trust !== "verified") {
     throw new Error("Unverified runs cannot be posted to GitHub.");
   }
-  if (!report.summary?.trim()) {
-    throw new Error("Run has no maintainer summary.");
+  const required = [
+    ["summary", report.summary],
+    ["repro steps", report.reproSteps],
+    ["observed behavior", report.observed],
+    ["expected behavior", report.expected],
+    ["environment", report.environmentNotes],
+  ] as const;
+  const missing = required.filter(([, value]) => !value?.trim()).map(([name]) => name);
+  if (missing.length > 0) {
+    throw new Error(`Run has incomplete maintainer narrative: missing ${missing.join(", ")}.`);
   }
 }

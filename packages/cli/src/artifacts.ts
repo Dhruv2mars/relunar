@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { runStoreDir } from "./runs";
 import type { RunReport, SandboxSession } from "./types";
@@ -33,12 +34,19 @@ export async function collectArtifacts(input: {
   await mkdir(artifactDir, { recursive: true });
   const localPath = join(artifactDir, name);
   await input.sandbox.download(remotePath, localPath);
-  const [bytes, metadata] = await Promise.all([readFile(localPath), stat(localPath)]);
+  const metadata = await stat(localPath);
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    createReadStream(localPath)
+      .on("data", (chunk) => hash.update(chunk))
+      .on("error", reject)
+      .on("end", resolve);
+  });
   return [{
     name,
     remotePath,
     localPath,
     sizeBytes: metadata.size,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
+    sha256: hash.digest("hex"),
   }];
 }
