@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseArgs } from "../src/args";
-import { execRepro, finishRepro, startRepro, uploadReproFile } from "../src/repro";
+import { cleanupRepro, execRepro, finishRepro, startRepro, uploadReproFile } from "../src/repro";
 import { findActiveRunForIssue } from "../src/runs";
 import type { Issue, SandboxExecResult, SandboxProvider, SandboxSession } from "../src/types";
 
@@ -25,8 +25,17 @@ describe("agent-driven repro lifecycle", () => {
       const uploaded = await uploadReproFile({ cwd, runId: started.runId, localPath: "repro.ts", remotePath: "repo/repro.ts", sandboxProvider: provider });
       expect(uploaded.commands.at(-1)?.name).toBe("repro_upload");
 
-      const executed = await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", sandboxProvider: provider });
+      const executed = await execRepro({
+        cwd,
+        runId: started.runId,
+        command: "bun repro.ts",
+        expectations: { outputMatches: "crash reproduced" },
+        repeat: 2,
+        sandboxProvider: provider,
+      });
       expect(executed.commands.at(-1)?.name).toBe("repro");
+      expect(executed.commands.filter((command) => command.name === "repro")).toHaveLength(2);
+      expect(executed.commands.at(-1)?.verification?.passed).toBe(true);
       expect(executed.nextStep).toContain("Probe evidence recorded");
 
       const finished = await finishRepro({
@@ -46,8 +55,14 @@ describe("agent-driven repro lifecycle", () => {
       expect(finished.observed).toBe("Error: boom");
       expect(finished.expected).toBe("No crash");
       expect(finished.environmentNotes).toBe("bun 1.2");
+      expect(finished.trust).toBe("verified");
       expect(finished.nextStep).toContain("finalized as reproduced");
+      expect(sandbox.disposed).toBe(false);
+      const cleaned = await cleanupRepro({ cwd, runId: started.runId, sandboxProvider: provider });
+      expect(cleaned.cleanup?.status).toBe("completed");
       expect(sandbox.disposed).toBe(true);
+      const cleanedAgain = await cleanupRepro({ cwd, runId: started.runId, sandboxProvider: provider });
+      expect(cleanedAgain.cleanup?.status).toBe("completed");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -68,18 +83,70 @@ describe("agent-driven repro lifecycle", () => {
     }
   });
 
-  test("rejects reproduced finish when probe produced no output", async () => {
+  test("rejects reproduced finish when probe has output but no explicit assertion", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-output-gate-"));
     try {
       await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
       const sandbox = new FakeSandbox();
       const provider = fakeProvider(sandbox);
       const started = await startRepro(input(cwd, provider));
-      await execRepro({ cwd, runId: started.runId, command: "true", sandboxProvider: provider });
+      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", sandboxProvider: provider });
 
       await expect(
         finishRepro({ cwd, runId: started.runId, outcome: "reproduced", summary: "Claimed repro with empty probe.", sandboxProvider: provider }),
-      ).rejects.toThrow("fail, time out, or produce output");
+      ).rejects.toThrow("verified passing probe assertion");
+      expect(sandbox.disposed).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("not-reproduced requires an evaluated assertion that did not match", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-not-reproduced-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      await execRepro({
+        cwd,
+        runId: started.runId,
+        command: "bun repro.ts",
+        expectations: { outputMatches: "segmentation fault" },
+        sandboxProvider: provider,
+      });
+
+      const finished = await finishRepro({
+        cwd,
+        runId: started.runId,
+        outcome: "not_reproduced",
+        summary: "Expected crash signature did not occur.",
+        sandboxProvider: provider,
+      });
+      expect(finished.trust).toBe("verified");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("reproduced requires complete maintainer narrative", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-narrative-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", expectations: { outputMatches: "crash" }, sandboxProvider: provider });
+
+      await expect(
+        finishRepro({
+          cwd,
+          runId: started.runId,
+          outcome: "reproduced",
+          summary: "Crash observed.",
+          sandboxProvider: provider,
+        }),
+      ).rejects.toThrow("requires --repro-steps, --observed, --expected, and --environment");
       expect(sandbox.disposed).toBe(false);
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -94,7 +161,7 @@ describe("agent-driven repro lifecycle", () => {
       const provider = fakeProvider(sandbox);
       const started = await startRepro(input(cwd, provider));
       expect(sandbox.disposed).toBe(false);
-      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", sandboxProvider: provider });
+      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", expectations: { outputMatches: "crash" }, sandboxProvider: provider });
       expect(sandbox.touchCount).toBeGreaterThan(0);
       expect(sandbox.disposed).toBe(false);
       await finishRepro({
@@ -102,8 +169,14 @@ describe("agent-driven repro lifecycle", () => {
         runId: started.runId,
         outcome: "reproduced",
         summary: "Warm until finish, then disposed.",
+        reproSteps: "1. Run bun repro.ts",
+        observed: "crash reproduced",
+        expected: "no crash",
+        environmentNotes: "bun test",
         sandboxProvider: provider,
       });
+      expect(sandbox.disposed).toBe(false);
+      await cleanupRepro({ cwd, runId: started.runId, sandboxProvider: provider });
       expect(sandbox.disposed).toBe(true);
     } finally {
       await rm(cwd, { recursive: true, force: true });
@@ -155,7 +228,7 @@ describe("agent-driven repro lifecycle", () => {
       expect(active?.runId).toBe(started.runId);
       expect(await findActiveRunForIssue(cwd, 123, "other/repo")).toBeNull();
 
-      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", sandboxProvider: provider });
+      await execRepro({ cwd, runId: started.runId, command: "bun repro.ts", expectations: { outputMatches: "missing signature" }, sandboxProvider: provider });
       await finishRepro({ cwd, runId: started.runId, outcome: "not_reproduced", summary: "Did not crash.", sandboxProvider: provider });
       expect(await findActiveRunForIssue(cwd, 123, "owner/repo")).toBeNull();
     } finally {

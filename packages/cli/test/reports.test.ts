@@ -130,6 +130,49 @@ describe("reports", () => {
     expect(markdown).toContain("TS1005");
   });
 
+  test("renders machine verification, fingerprint, and collected artifacts", () => {
+    const report = baseReport({
+      status: "reproduced",
+      trust: "verified",
+      summary: "Crash signature matched three times.",
+      reproSteps: "1. Run repro",
+      observed: "TypeError",
+      expected: "No crash",
+      environmentNotes: "node project",
+      commands: Array.from({ length: 3 }, (_, index) => ({
+        name: "repro",
+        command: "node repro.js",
+        status: "failed" as const,
+        exitCode: 1,
+        durationMs: 5,
+        stdout: "",
+        stderr: "TypeError",
+        verification: {
+          verified: true,
+          passed: true,
+          attempt: index + 1,
+          totalAttempts: 3,
+          checks: [{ kind: "stderr_matches" as const, expected: "/TypeError/", actual: "TypeError", passed: true }],
+        },
+      })),
+      environment: {
+        os: "Linux",
+        architecture: "x86_64",
+        runtimes: { node: "v22.1.0" },
+        workingDirectory: "repo",
+        variableNames: ["CI"],
+        services: [],
+      },
+      artifacts: [{ name: "artifacts.tar.gz", remotePath: "/tmp/a", localPath: "/tmp/local", sizeBytes: 42, sha256: "abc" }],
+    });
+    const markdown = renderMarkdownReport(report, 20);
+    expect(markdown).toContain("Verification: **verified** — 3/3 probe assertions matched");
+    expect(markdown).toContain("- `stderr_matches`: passed");
+    expect(markdown).toContain("- Runtime `node`: v22.1.0");
+    expect(markdown).toContain("- Collected: `artifacts/artifacts.tar.gz` (42 bytes, sha256 `abc`)");
+    expect(markdown).not.toContain("/tmp/local");
+  });
+
   test("evidenceExcerpt prefers last failing repro output", () => {
     const excerpt = evidenceExcerpt(
       [

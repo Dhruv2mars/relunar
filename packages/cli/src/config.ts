@@ -24,6 +24,7 @@ const configSchema = z.object({
   sandbox: z
     .object({
       image: z.string().min(1).optional(),
+      snapshot: z.string().min(1).optional(),
       resources: z
         .object({
           cpu: z.number().positive().optional(),
@@ -36,6 +37,9 @@ const configSchema = z.object({
     .refine((sandbox) => !sandbox.resources || sandbox.image !== undefined, {
       message: "sandbox.resources requires sandbox.image",
     })
+    .refine((sandbox) => !(sandbox.image && sandbox.snapshot), {
+      message: "sandbox.image and sandbox.snapshot are mutually exclusive",
+    })
     .optional(),
   sync: z
     .object({
@@ -43,6 +47,32 @@ const configSchema = z.object({
       includeUntracked: z.boolean().optional(),
       exclude: z.array(z.string().min(1)).optional(),
     })
+    .optional(),
+  workspace: z
+    .object({
+      workdir: z.string().min(1).optional(),
+      checkout: z.string().min(1).optional(),
+      fetchDepth: z.number().int().min(0).optional(),
+      submodules: z.boolean().optional(),
+      lfs: z.boolean().optional(),
+    })
+    .optional(),
+  environment: z
+    .object({
+      variables: z.record(z.string(), z.string()).optional(),
+      passthrough: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).optional(),
+    })
+    .optional(),
+  services: z
+    .array(z.object({
+      name: z.string().min(1),
+      start: z.string().min(1),
+      ready: z.string().min(1),
+      stop: z.string().min(1).optional(),
+    }))
+    .optional(),
+  artifacts: z
+    .object({ collect: z.array(z.string().min(1)).default([]) })
     .optional(),
   evidence: z
     .object({

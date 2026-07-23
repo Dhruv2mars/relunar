@@ -18,8 +18,26 @@ describe("cli", () => {
     expect(output.stdout).toContain("Agent workflow");
     expect(output.stdout).toContain("environment_ready means the sandbox is ready");
     expect(output.stdout).toContain("Sandbox stays warm until finish/abort");
-    expect(output.stdout).toContain("fail/timeout or probe output");
+    expect(output.stdout).toContain("derives trust from assertions");
     expect(output.stdout).toContain("Machine setup");
+    expect(output.stdout).toContain("--expect-exit");
+    expect(output.stdout).toContain("--output-match");
+    expect(output.stdout).toContain("--repeat");
+  });
+
+  test("probe assertion flags validate before auth and network work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-probe-flags-"));
+    try {
+      const output = await invoke(["repro", "exec", "run-1", "--repeat", "0", "--", "echo", "hello"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_SKIP_GH_AUTH_TOKEN: "1",
+      });
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("--repeat must be a positive integer");
+      expect(output.stderr).not.toContain("No repo linked");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("prints supported skills", async () => {

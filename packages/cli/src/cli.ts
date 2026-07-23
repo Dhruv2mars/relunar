@@ -6,12 +6,14 @@ import { findLinkedRepo, globalConfigPath, isRepoSlug, linkRepo, readGlobalConfi
 import { resolveDaytonaApiKey, resolveGithubToken, writeSecret, type SecretBackend } from "./credentials";
 import { DaytonaSandboxProvider } from "./daytona";
 import { GitHubClient } from "./github";
-import { isFinalizedRepro, renderMarkdownReport, withAgentNextStep } from "./reports";
-import { abortRepro, execRepro, finishRepro, startRepro, syncRepro, uploadReproFile } from "./repro";
+import { withAgentNextStep } from "./reports";
+import { previewPublication, publishRunComment } from "./publication";
+import { gcOrphanSandboxes, inspectSandboxes } from "./recovery";
+import { abortRepro, cleanupRepro, execRepro, finishRepro, startRepro, syncRepro, uploadReproFile } from "./repro";
 import { findActiveRunForIssue, listRuns, readRun, runStoreDir } from "./runs";
 import { readSetupStatus, runInteractiveSetup, type SetupPrompter } from "./setup";
 import { getSkill, installSkill, isSupportedSkill, supportedSkills } from "./skills";
-import type { RepoSlug, ReproOutcome, RunReport } from "./types";
+import type { ProbeExpectations, RepoSlug, ReproOutcome, RunReport } from "./types";
 import type { SecretName } from "./credentials";
 
 export type CliIO = {
@@ -99,6 +101,10 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
         return 1;
       }
       return await runsShow(third, flags, deps);
+    }
+
+    if (command === "sandboxes") {
+      return await sandboxes(subcommand, flags, deps);
     }
 
     if (command === "skills") {
@@ -278,6 +284,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     deps.io.stderr("Invalid limit. Use a positive integer.\n");
     return 1;
   }
+  const probeOptions = parseProbeOptions(flags);
 
   const allOpen = flagBoolean(flags, "all-open");
   if (allOpen) {
@@ -294,8 +301,8 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     return 1;
   }
   const action = isOneShot ? "oneshot" : legacyIssueNumber !== null ? "start" : args[0];
-  if (!action || !["oneshot", "start", "exec", "upload", "sync", "finish", "abort"].includes(action)) {
-    deps.io.stderr("Usage: relunar repro <issue-number> [--sync] [-- <probe-command>] | start|exec|upload|sync|finish|abort\n");
+  if (!action || !["oneshot", "start", "exec", "upload", "sync", "finish", "comment", "cleanup", "abort"].includes(action)) {
+    deps.io.stderr("Usage: relunar repro <issue-number> [--sync] [-- <probe-command>] | start|exec|upload|sync|finish|comment|cleanup|abort\n");
     return 1;
   }
   if (action === "start" && parseIssueNumber(legacyIssueNumber !== null ? args[0] : args[1]) === null) {
@@ -312,15 +319,33 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     }
   }
 
+  if (action === "comment" && args[1] === "preview") {
+    if (!args[2]) {
+      deps.io.stderr("Usage: relunar repro comment preview <run-id>\n");
+      return 1;
+    }
+    deps.io.stdout(await previewPublication(deps.cwd, args[2], 40));
+    return 0;
+  }
+
   const repo = await requireRepo(deps);
   const token = await requireGithubToken(deps);
+  const client = new GitHubClient(token);
+  if (action === "comment" && args[1] === "post") {
+    if (!args[2]) {
+      deps.io.stderr("Usage: relunar repro comment post <run-id>\n");
+      return 1;
+    }
+    const posted = await publishRunComment(deps.cwd, args[2], client, 40);
+    printReport(deps, posted);
+    return 0;
+  }
   const globalConfig = await readGlobalConfig(configPath(deps));
   const daytonaKey = await resolveDaytonaApiKey(deps.env);
   if (!daytonaKey) {
     throw new Error("Missing Daytona API key. Run relunar auth daytona --api-key <key> or set RELUNAR_DAYTONA_API_KEY.");
   }
 
-  const client = new GitHubClient(token);
   const provider = new DaytonaSandboxProvider({
     apiKey: daytonaKey,
     apiUrl: deps.env.RELUNAR_DAYTONA_API_URL ?? globalConfig.daytona?.apiUrl,
@@ -338,8 +363,8 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     if (active) {
       report = active;
     } else {
-      const issue = await client.getIssue(repo, issueNumber);
-      report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
+      const issue = await client.getIssueContext(repo, issueNumber);
+      report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider, hostEnv: deps.env });
     }
 
     if (report.status !== "environment_ready") {
@@ -355,14 +380,16 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
         sandboxProvider: provider,
         sync: flagBoolean(flags, "sync"),
         includeUntracked: optionalTrueFlag(flags, "include-untracked"),
+        ...probeOptions,
+        hostEnv: deps.env,
       });
     } catch (error) {
       // Active run pointed at a disposed/missing sandbox — start a fresh lifecycle once.
       if (!active) {
         throw error;
       }
-      const issue = await client.getIssue(repo, issueNumber);
-      report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
+      const issue = await client.getIssueContext(repo, issueNumber);
+      report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider, hostEnv: deps.env });
       if (report.status !== "environment_ready") {
         printReport(deps, report);
         return 1;
@@ -374,6 +401,8 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
         sandboxProvider: provider,
         sync: flagBoolean(flags, "sync"),
         includeUntracked: optionalTrueFlag(flags, "include-untracked"),
+        ...probeOptions,
+        hostEnv: deps.env,
       });
     }
 
@@ -386,7 +415,8 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
         sandboxProvider: provider,
         skipEvidenceGates: flagBoolean(flags, "skip-evidence-gates"),
       });
-      await maybeComment(client, repo, report.issue.number, report, flagBoolean(flags, "comment"));
+      if (flagBoolean(flags, "comment")) report = await publishRunComment(deps.cwd, report.runId, client, 40);
+      report = await cleanupRepro({ cwd: deps.cwd, runId: report.runId, sandboxProvider: provider });
     }
   } else if (action === "start") {
     const issueNumber = parseIssueNumber(legacyIssueNumber !== null ? args[0] : args[1]);
@@ -394,8 +424,8 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       deps.io.stderr("Usage: relunar repro start <issue-number>\n");
       return 1;
     }
-    const issue = await client.getIssue(repo, issueNumber);
-    report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider });
+    const issue = await client.getIssueContext(repo, issueNumber);
+    report = await startRepro({ cwd: deps.cwd, repo, issue, githubToken: token, sandboxProvider: provider, hostEnv: deps.env });
   } else if (action === "exec") {
     if (!args[1] || passthrough.length === 0) {
       deps.io.stderr("Usage: relunar repro exec <run-id> [--sync] [--include-untracked] -- <command>\n");
@@ -408,6 +438,8 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       sandboxProvider: provider,
       sync: flagBoolean(flags, "sync"),
       includeUntracked: optionalTrueFlag(flags, "include-untracked"),
+      ...probeOptions,
+      hostEnv: deps.env,
     });
   } else if (action === "sync") {
     if (!args[1]) {
@@ -443,7 +475,14 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
       sandboxProvider: provider,
       skipEvidenceGates: flagBoolean(flags, "skip-evidence-gates"),
     });
-    await maybeComment(client, repo, report.issue.number, report, flagBoolean(flags, "comment"));
+    if (flagBoolean(flags, "comment")) report = await publishRunComment(deps.cwd, report.runId, client, 40);
+    report = await cleanupRepro({ cwd: deps.cwd, runId: report.runId, sandboxProvider: provider });
+  } else if (action === "cleanup") {
+    if (!args[1]) {
+      deps.io.stderr("Usage: relunar repro cleanup <run-id>\n");
+      return 1;
+    }
+    report = await cleanupRepro({ cwd: deps.cwd, runId: args[1], sandboxProvider: provider });
   } else if (action === "abort") {
     if (!args[1]) {
       deps.io.stderr("Usage: relunar repro abort <run-id>\n");
@@ -461,22 +500,6 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
 
 function printReport(deps: CliDeps, report: RunReport): void {
   deps.io.stdout(`${JSON.stringify(withAgentNextStep(report), null, 2)}\n`);
-}
-
-async function maybeComment(
-  client: GitHubClient,
-  repo: RepoSlug,
-  issueNumber: number,
-  report: RunReport,
-  comment: boolean,
-): Promise<void> {
-  if (!comment) {
-    return;
-  }
-  if (!isFinalizedRepro(report)) {
-    throw new Error(`Refusing GitHub comment for non-finalized run ${report.runId}.`);
-  }
-  await client.createComment(repo, issueNumber, renderMarkdownReport(report, 40));
 }
 
 function parseOutcome(value: string | undefined): ReproOutcome | null {
@@ -524,6 +547,62 @@ function shellCommand(args: string[]): string {
   return args.map((arg) => (/^[A-Za-z0-9_./:=@%+,-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`)).join(" ");
 }
 
+function parseProbeOptions(flags: Record<string, string | boolean>): {
+  expectations: ProbeExpectations;
+  repeat?: number;
+  resetCommand?: string;
+  control?: { command: string; expectations: ProbeExpectations };
+} {
+  const valueFlags = ["expect-exit", "stdout-match", "stderr-match", "output-match", "file-exists", "max-duration-ms", "repeat", "reset-command", "control-command", "control-expect-exit", "control-output-match"];
+  for (const name of valueFlags) {
+    if (flagNeedsValue(flags, name)) throw new Error(`Missing value for --${name}.`);
+  }
+
+  const expectations: ProbeExpectations = {};
+  const exit = flagString(flags, "expect-exit");
+  if (exit !== undefined) {
+    if (!/^-?\d+$/.test(exit)) throw new Error("--expect-exit must be an integer.");
+    expectations.exitCode = Number.parseInt(exit, 10);
+  }
+  const stdout = flagString(flags, "stdout-match");
+  const stderr = flagString(flags, "stderr-match");
+  const output = flagString(flags, "output-match");
+  if (stdout) expectations.stdoutMatches = stdout;
+  if (stderr) expectations.stderrMatches = stderr;
+  if (output) expectations.outputMatches = output;
+  const files = flagString(flags, "file-exists")?.split(",").map((value) => value.trim()).filter(Boolean);
+  if (files?.length) expectations.filesExist = files;
+
+  const maxDuration = parsePositiveFlag(flags, "max-duration-ms");
+  if (maxDuration !== undefined) expectations.maxDurationMs = maxDuration;
+  const repeat = parsePositiveFlag(flags, "repeat");
+  const resetCommand = flagString(flags, "reset-command")?.trim();
+  const controlCommand = flagString(flags, "control-command")?.trim();
+  const controlExpectations: ProbeExpectations = {};
+  const controlExit = flagString(flags, "control-expect-exit");
+  if (controlExit !== undefined) {
+    if (!/^-?\d+$/.test(controlExit)) throw new Error("--control-expect-exit must be an integer.");
+    controlExpectations.exitCode = Number.parseInt(controlExit, 10);
+  }
+  const controlOutput = flagString(flags, "control-output-match")?.trim();
+  if (controlOutput) controlExpectations.outputMatches = controlOutput;
+  if ((controlExit !== undefined || controlOutput) && !controlCommand) throw new Error("Control expectations require --control-command.");
+  if (controlCommand && Object.keys(controlExpectations).length === 0) throw new Error("--control-command requires --control-expect-exit or --control-output-match.");
+  return {
+    expectations,
+    ...(repeat !== undefined ? { repeat } : {}),
+    ...(resetCommand ? { resetCommand } : {}),
+    ...(controlCommand ? { control: { command: controlCommand, expectations: controlExpectations } } : {}),
+  };
+}
+
+function parsePositiveFlag(flags: Record<string, string | boolean>, name: string): number | undefined {
+  const value = flagString(flags, name);
+  if (value === undefined) return undefined;
+  if (!/^[1-9]\d*$/.test(value)) throw new Error(`--${name} must be a positive integer.`);
+  return Number.parseInt(value, 10);
+}
+
 async function runsList(flags: Record<string, string | boolean>, deps: CliDeps): Promise<number> {
   const runs = await listRuns(deps.cwd);
   if (flagBoolean(flags, "json")) {
@@ -545,6 +624,32 @@ async function runsShow(runId: string, flags: Record<string, string | boolean>, 
     deps.io.stdout(markdown);
   }
   return 0;
+}
+
+async function sandboxes(
+  subcommand: string | undefined,
+  flags: Record<string, string | boolean>,
+  deps: CliDeps,
+): Promise<number> {
+  const apiKey = await resolveDaytonaApiKey(deps.env);
+  if (!apiKey) throw new Error("Missing Daytona API key.");
+  const globalConfig = await readGlobalConfig(configPath(deps));
+  const provider = new DaytonaSandboxProvider({
+    apiKey,
+    apiUrl: deps.env.RELUNAR_DAYTONA_API_URL ?? globalConfig.daytona?.apiUrl,
+    target: deps.env.RELUNAR_DAYTONA_TARGET ?? globalConfig.daytona?.target,
+  });
+  if (subcommand === "list") {
+    deps.io.stdout(`${JSON.stringify(await inspectSandboxes(deps.cwd, provider), null, 2)}\n`);
+    return 0;
+  }
+  if (subcommand === "gc") {
+    const result = await gcOrphanSandboxes(deps.cwd, provider, { dryRun: !flagBoolean(flags, "confirm") });
+    deps.io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  deps.io.stderr("Usage: relunar sandboxes list | relunar sandboxes gc [--confirm]\n");
+  return 1;
 }
 
 async function skills(
@@ -651,7 +756,10 @@ Agent workflow:
 
   Sandbox stays warm until finish/abort. Idle auto-stop defaults to 60m (sandbox.autoStopMinutes).
   Sync dirty local edits with --sync or sync.onExec in .relunar.yml.
-  Finish enforces evidence gates (reproduced requires fail/timeout or probe output by default).
+  Probe assertions: --expect-exit N, --stdout-match REGEX, --stderr-match REGEX,
+    --output-match REGEX, --file-exists PATH[,PATH], --max-duration-ms N, --repeat N.
+    Optional: --control-command CMD with control assertion; --reset-command CMD between repeats.
+  Finish derives trust from assertions. Arbitrary output is never verified proof.
 
   environment_ready means the sandbox is ready — not that the issue was reproduced.
   Put finish flags before \`--\` when combining with one-shot:
@@ -680,16 +788,21 @@ Commands:
   relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
   relunar repo link owner/repo
   relunar issues list [--state open|closed|all] [--limit N] [--json]
-  relunar repro <issue-number> [--sync] [--include-untracked] -- <probe-command>
+  relunar repro <issue-number> [--sync] [--include-untracked] [--expect-exit N] [--output-match REGEX] [--repeat N] -- <probe-command>
   relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates] -- <probe-command>
   relunar repro start <issue-number>
   relunar repro sync <run-id> [--include-untracked]
-  relunar repro exec <run-id> [--sync] [--include-untracked] -- <command>
+  relunar repro exec <run-id> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] -- <command>
   relunar repro upload <run-id> <local-path> <remote-path>
   relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]
   relunar repro abort <run-id>
+  relunar repro comment preview <run-id>
+  relunar repro comment post <run-id>
+  relunar repro cleanup <run-id>
   relunar runs list [--json]
   relunar runs show <run-id> [--json]
+  relunar sandboxes list
+  relunar sandboxes gc [--confirm]
   relunar skills list|get|install [agent]
 `;
 }

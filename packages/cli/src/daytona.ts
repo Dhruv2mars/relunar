@@ -29,7 +29,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     const autoStopInterval = input.autoStopMinutes ?? DEFAULT_AUTO_STOP_MINUTES;
     const sandbox = await this.daytona.create(
       {
-        ...(input.image
+        ...(input.snapshot
+          ? { snapshot: input.snapshot }
+          : input.image
           ? { image: input.image, ...(input.resources ? { resources: input.resources } : {}) }
           : { language: CodeLanguage.TYPESCRIPT }),
         ephemeral: true,
@@ -53,6 +55,19 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     }
     const autoStopInterval = sandbox.autoStopInterval ?? DEFAULT_AUTO_STOP_MINUTES;
     return this.session(sandbox, autoStopInterval);
+  }
+
+  async listRelunarSandboxes(): Promise<Array<{ id: string; runId: string | null; state: string }>> {
+    const items: Array<{ id: string; runId: string | null; state: string }> = [];
+    for await (const sandbox of this.daytona.list({ labels: { app: "relunar" } })) {
+      items.push({ id: sandbox.id, runId: sandbox.labels.runId ?? null, state: sandbox.state ?? "unknown" });
+    }
+    return items;
+  }
+
+  async deleteSandbox(id: string): Promise<void> {
+    const sandbox = await this.daytona.get(id);
+    await this.daytona.delete(sandbox, 120);
   }
 
   private session(sandbox: Awaited<ReturnType<Daytona["get"]>>, autoStopMinutes: number): SandboxSession {
@@ -85,6 +100,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       },
       upload: async (localPath, remotePath) => {
         await sandbox.fs.uploadFile(localPath, remotePath);
+      },
+      download: async (remotePath, localPath) => {
+        await sandbox.fs.downloadFile(remotePath, localPath);
       },
       touchIdle: async (minutes = autoStopMinutes) => {
         await sandbox.setAutostopInterval(minutes);

@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { renderMarkdownReport } from "./reports";
 import type { CommandEvidence, RepoSlug, RunReport } from "./types";
@@ -15,10 +16,34 @@ export function createRunId(issueNumber: number, now = new Date()): string {
 export async function writeRun(cwd: string, report: RunReport, maxLogLines: number): Promise<string> {
   const dir = join(runStoreDir(cwd), report.runId);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  await writeFile(join(dir, "report.md"), renderMarkdownReport(report, maxLogLines), "utf8");
-  await writeFile(join(dir, "logs.txt"), renderLogs(report.commands), "utf8");
+  await Promise.all([
+    atomicWrite(join(dir, "report.json"), `${JSON.stringify(report, null, 2)}\n`),
+    atomicWrite(join(dir, "report.md"), renderMarkdownReport(report, maxLogLines)),
+    atomicWrite(join(dir, "logs.txt"), renderLogs(report.commands)),
+  ]);
   return dir;
+}
+
+export async function updateRun(
+  cwd: string,
+  runId: string,
+  maxLogLines: number,
+  mutate: (report: RunReport) => RunReport | Promise<RunReport>,
+): Promise<RunReport> {
+  return withRunLock(cwd, runId, async () => {
+    const next = await mutate(await readRun(cwd, runId));
+    await writeRun(cwd, next, maxLogLines);
+    return next;
+  });
+}
+
+export async function withRunLock<T>(cwd: string, runId: string, action: () => Promise<T>): Promise<T> {
+  const release = await acquireRunLock(cwd, runId);
+  try {
+    return await action();
+  } finally {
+    await release();
+  }
 }
 
 export async function listRuns(cwd: string): Promise<RunReport[]> {
@@ -56,9 +81,48 @@ export async function readRun(cwd: string, runId: string): Promise<RunReport> {
   }
 
   try {
-    return JSON.parse(raw) as RunReport;
+    return migrateRun(JSON.parse(raw) as RunReport);
   } catch {
     throw new Error(`Run report is corrupt: ${runId}`);
+  }
+}
+
+function migrateRun(report: RunReport): RunReport {
+  return {
+    ...report,
+    schemaVersion: 2,
+    trust: report.trust ?? "unverified",
+  };
+}
+
+async function atomicWrite(path: string, contents: string): Promise<void> {
+  const temp = `${path}.tmp-${randomUUID()}`;
+  try {
+    await writeFile(temp, contents, "utf8");
+    await rename(temp, path);
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
+}
+
+async function acquireRunLock(cwd: string, runId: string): Promise<() => Promise<void>> {
+  const dir = join(runStoreDir(cwd), runId);
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, "run.lock");
+  const deadline = Date.now() + 30_000;
+  while (true) {
+    try {
+      const handle = await open(path, "wx");
+      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
+      await handle.close();
+      return async () => {
+        await unlink(path).catch(() => undefined);
+      };
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for run lock: ${runId}`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 }
 

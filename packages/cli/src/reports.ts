@@ -16,6 +16,18 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     lines.push(statusBlurb(report), "");
   }
 
+  const verifiedProbes = report.commands.filter((command) => command.verification?.verified);
+  if (report.trust) {
+    const passed = verifiedProbes.filter((command) => command.verification?.passed).length;
+    lines.push(`Verification: **${report.trust}**${verifiedProbes.length > 0 ? ` — ${passed}/${verifiedProbes.length} probe assertions matched` : ""}`, "");
+    const checks = verifiedProbes.at(-1)?.verification?.checks ?? [];
+    if (checks.length > 0) {
+      lines.push("### Machine checks", "");
+      for (const check of checks) lines.push(`- \`${check.kind}\`: ${check.passed ? "passed" : "failed"} (expected ${inline(check.expected)})`);
+      lines.push("");
+    }
+  }
+
   const reproSteps = report.reproSteps?.trim();
   if (reproSteps) {
     lines.push("### Steps to reproduce", "", reproSteps, "");
@@ -42,9 +54,20 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
       }
     }
   }
+  if (report.environment) {
+    lines.push(`- Platform: ${report.environment.os} ${report.environment.architecture}`);
+    lines.push(`- Working directory: \`${report.environment.workingDirectory}\``);
+    for (const [runtime, version] of Object.entries(report.environment.runtimes)) {
+      lines.push(`- Runtime \`${runtime}\`: ${version}`);
+    }
+    if (report.environment.services.length > 0) lines.push(`- Services: ${report.environment.services.join(", ")}`);
+  }
   lines.push("");
 
   lines.push(`Artifacts: \`.relunar/runs/${report.runId}\``);
+  for (const artifact of report.artifacts ?? []) {
+    lines.push(`- Collected: \`artifacts/${artifact.name}\` (${artifact.sizeBytes} bytes, sha256 \`${artifact.sha256}\`)`);
+  }
   return `${lines.join("\n")}\n`;
 }
 
@@ -176,4 +199,8 @@ function trimLog(output: string, maxLogLines: number): string {
 
 function fenced(value: string): string {
   return `\`\`\`txt\n${value}\n\`\`\``;
+}
+
+function inline(value: string): string {
+  return `\`${value.replaceAll("`", "\\`")}\``;
 }

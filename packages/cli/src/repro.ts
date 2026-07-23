@@ -1,11 +1,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { collectArtifacts } from "./artifacts";
 import { parseRelunarConfig, defaultRelunarConfig, resolveAutoStopMinutes } from "./config";
 import { assertEvidenceGates } from "./evidence";
+import { detectSandboxImage } from "./detection";
+import { prepareTerminalEnvironment, resolveCommandEnv, resolveWorkdir } from "./environment";
+import { executeProbe } from "./probe";
 import { redactSecret, withAgentNextStep } from "./reports";
 import { createRunId, readRun, runStoreDir, writeRun } from "./runs";
 import { syncWorktree } from "./sync";
-import type { CommandEvidence, Issue, RelunarConfig, RepoSlug, ReproOutcome, RunReport, SandboxProvider, SandboxSession } from "./types";
+import type { CommandEvidence, Issue, ProbeExpectations, RelunarConfig, RepoSlug, ReproOutcome, RunReport, SandboxProvider, SandboxSession } from "./types";
 
 export type ReproInput = {
   cwd: string;
@@ -14,6 +18,7 @@ export type ReproInput = {
   githubToken: string;
   sandboxProvider: SandboxProvider;
   commandTimeoutSeconds?: number;
+  hostEnv?: NodeJS.ProcessEnv | undefined;
 };
 
 export async function runRepro(input: ReproInput): Promise<RunReport> {
@@ -33,6 +38,10 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
   let config: RelunarConfig = defaultRelunarConfig;
   let commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
   let keepSandbox = false;
+  let workdir = "repo";
+  let commandEnv: Record<string, string> = {};
+  let environment: RunReport["environment"];
+  let sandboxImage: string | undefined;
 
   try {
     const localConfig = await readLocalConfig(input.cwd);
@@ -41,9 +50,11 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
       config = localConfig;
       commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
     }
+    sandboxImage = config.sandbox?.image ?? await detectSandboxImage(input.cwd);
     sandbox = await input.sandboxProvider.createSandbox({
       runId,
-      image: config.sandbox?.image,
+      image: sandboxImage,
+      snapshot: config.sandbox?.snapshot,
       resources: config.sandbox?.resources,
       autoStopMinutes: resolveAutoStopMinutes(config),
     });
@@ -61,10 +72,10 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
     );
 
     if (lastFailed(commands)) {
-      return await finish(input, startedAt, runId, "setup_failed", commands, commit, sandbox, "Repository clone failed", config);
+      return await finish(input, startedAt, runId, "setup_failed", commands, commit, sandbox, "Repository clone failed", config, environment, sandboxImage);
     }
 
-    const commitResult = await sandbox.run("git rev-parse --short HEAD", "repo", commandTimeoutSeconds);
+    const commitResult = await sandbox.run("git rev-parse HEAD", "repo", commandTimeoutSeconds);
     commit = commitResult.exitCode === 0 ? commitResult.stdout.trim() : null;
 
     if (!hasLocalConfig) {
@@ -74,6 +85,16 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
         commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
       }
     }
+    const prepared = await prepareTerminalEnvironment({
+      sandbox,
+      config,
+      hostEnv: input.hostEnv ?? process.env,
+      timeoutSeconds: commandTimeoutSeconds,
+    });
+    workdir = prepared.workdir;
+    commandEnv = prepared.commandEnv;
+    environment = prepared.fingerprint;
+    commands.push(...prepared.commands);
 
     for (const command of config.setup) {
       commands.push(
@@ -81,13 +102,15 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
           sandbox,
           name: "setup",
           command,
-          cwd: "repo",
+          cwd: workdir,
           timeoutSeconds: commandTimeoutSeconds,
           secret: input.githubToken,
+          env: commandEnv,
+          secrets: Object.values(commandEnv),
         }),
       );
       if (lastFailed(commands)) {
-        return await finish(input, startedAt, runId, "setup_failed", commands, commit, sandbox, `${command} failed`, config);
+        return await finish(input, startedAt, runId, "setup_failed", commands, commit, sandbox, `${command} failed`, config, environment, sandboxImage);
       }
     }
 
@@ -97,24 +120,26 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
           sandbox,
           name: "baseline",
           command,
-          cwd: "repo",
+          cwd: workdir,
           timeoutSeconds: commandTimeoutSeconds,
           secret: input.githubToken,
+          env: commandEnv,
+          secrets: Object.values(commandEnv),
         }),
       );
       if (lastFailed(commands)) {
-        return await finish(input, startedAt, runId, "baseline_failed", commands, commit, sandbox, `${command} failed`, config);
+        return await finish(input, startedAt, runId, "baseline_failed", commands, commit, sandbox, `${command} failed`, config, environment, sandboxImage);
       }
     }
 
-    const report = await finish(input, startedAt, runId, disposeOnReady ? "passed" : "environment_ready", commands, commit, sandbox, null, config);
+    const report = await finish(input, startedAt, runId, disposeOnReady ? "passed" : "environment_ready", commands, commit, sandbox, null, config, environment, sandboxImage);
     if (!disposeOnReady) {
       keepSandbox = true;
     }
     return report;
   } catch (error) {
     const failure = error instanceof Error ? error.message : String(error);
-    return await finish(input, startedAt, runId, "blocked", commands, commit, sandbox, failure, config);
+    return await finish(input, startedAt, runId, "blocked", commands, commit, sandbox, failure, config, environment, sandboxImage);
   } finally {
     if (sandbox && !keepSandbox) {
       await sandbox.dispose();
@@ -129,12 +154,19 @@ export type ExecReproInput = {
   sandboxProvider: SandboxProvider;
   sync?: boolean | undefined;
   includeUntracked?: boolean | undefined;
+  expectations?: ProbeExpectations | undefined;
+  repeat?: number | undefined;
+  hostEnv?: NodeJS.ProcessEnv | undefined;
+  resetCommand?: string | undefined;
+  control?: { command: string; expectations: ProbeExpectations } | undefined;
 };
 
 export async function execRepro(input: ExecReproInput): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
+  const workdir = resolveWorkdir(config.workspace?.workdir);
+  const commandEnv = resolveCommandEnv(config, input.hostEnv ?? process.env);
 
   const shouldSync = input.sync === true || config.sync?.onExec === true;
   if (shouldSync) {
@@ -148,14 +180,18 @@ export async function execRepro(input: ExecReproInput): Promise<RunReport> {
   }
 
   report.commands.push(
-    await execEvidence({
+    ...(await executeProbe({
       sandbox,
-      name: "repro",
       command: input.command,
-      cwd: "repo",
+      cwd: workdir,
       timeoutSeconds: config.commandTimeoutSeconds,
-      secret: null,
-    }),
+      expectations: input.expectations ?? {},
+      repeat: input.repeat,
+      env: commandEnv,
+      secrets: Object.values(commandEnv),
+      resetCommand: input.resetCommand,
+      control: input.control,
+    })),
   );
   report.finishedAt = new Date().toISOString();
   return await persistRun(input.cwd, report, config.report.maxLogLines);
@@ -229,18 +265,67 @@ export async function finishRepro(
     sandbox,
     timeoutSeconds: config.commandTimeoutSeconds,
   });
-
-  await sandbox.dispose();
+  if (
+    input.outcome === "reproduced" &&
+    (![input.reproSteps, input.observed, input.expected, input.environmentNotes].every((value) => value?.trim()))
+  ) {
+    throw new Error("A reproduced outcome requires --repro-steps, --observed, --expected, and --environment.");
+  }
+  report.artifacts = await collectArtifacts({
+    cwd: input.cwd,
+    runId: report.runId,
+    sandbox,
+    patterns: config.artifacts?.collect ?? [],
+    timeoutSeconds: config.commandTimeoutSeconds,
+  });
 
   report.status = input.outcome;
+  report.trust = input.skipEvidenceGates === true || input.outcome === "blocked" ? "unverified" : "verified";
   report.summary = summary;
   report.reproSteps = optionalText(input.reproSteps);
   report.observed = optionalText(input.observed);
   report.expected = optionalText(input.expected);
   report.environmentNotes = optionalText(input.environmentNotes);
   report.failure = input.outcome === "blocked" ? summary : null;
+  report.cleanup = {
+    status: "pending",
+    error: null,
+    updatedAt: new Date().toISOString(),
+  };
   report.finishedAt = new Date().toISOString();
   return await persistRun(input.cwd, report, config.report.maxLogLines);
+}
+
+export async function cleanupRepro(input: {
+  cwd: string;
+  runId: string;
+  sandboxProvider: SandboxProvider;
+}): Promise<RunReport> {
+  const report = await readRun(input.cwd, input.runId);
+  if (report.cleanup?.status === "completed") return report;
+  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  report.cleanup = { status: "pending", error: null, updatedAt: new Date().toISOString() };
+  await persistRun(input.cwd, report, config.report.maxLogLines);
+  try {
+    const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
+    const commandEnv = resolveCommandEnv(config, process.env);
+    const workdir = resolveWorkdir(config.workspace?.workdir);
+    for (const service of [...(config.services ?? [])].reverse()) {
+      if (service.stop) await sandbox.run(service.stop, workdir, config.commandTimeoutSeconds, commandEnv);
+    }
+    await sandbox.dispose();
+    report.cleanup = { status: "completed", error: null, updatedAt: new Date().toISOString() };
+    return await persistRun(input.cwd, report, config.report.maxLogLines);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/not found|404|deleted|does not exist/i.test(message)) {
+      report.cleanup = { status: "completed", error: null, updatedAt: new Date().toISOString() };
+      return await persistRun(input.cwd, report, config.report.maxLogLines);
+    }
+    report.cleanup = { status: "failed", error: message, updatedAt: new Date().toISOString() };
+    await persistRun(input.cwd, report, config.report.maxLogLines);
+    throw error;
+  }
 }
 
 function optionalText(value: string | undefined): string | null {
@@ -373,7 +458,9 @@ async function execEvidence(input: {
   timeoutSeconds: number;
   env?: Record<string, string>;
   secret: string | null;
+  secrets?: string[] | undefined;
 }): Promise<CommandEvidence> {
+  const startedAt = new Date().toISOString();
   const started = Date.now();
   const result = await input.sandbox.run(input.command, input.cwd, input.timeoutSeconds, input.env);
   const durationMs = Date.now() - started;
@@ -381,13 +468,21 @@ async function execEvidence(input: {
 
   return {
     name: input.name,
-    command: redactSecret(input.command, input.secret),
+    command: redactMany(redactSecret(input.command, input.secret), input.secrets ?? []),
     status,
     exitCode: result.exitCode,
     durationMs,
-    stdout: redactSecret(result.stdout, input.secret),
-    stderr: redactSecret(result.stderr, input.secret),
+    stdout: redactMany(redactSecret(result.stdout, input.secret), input.secrets ?? []),
+    stderr: redactMany(redactSecret(result.stderr, input.secret), input.secrets ?? []),
+    cwd: input.cwd,
+    envNames: Object.keys(input.env ?? {}).sort(),
+    startedAt,
+    finishedAt: new Date().toISOString(),
   };
+}
+
+function redactMany(value: string, secrets: string[]): string {
+  return secrets.filter(Boolean).reduce((current, secret) => current.split(secret).join("[redacted]"), value);
 }
 
 async function finish(
@@ -400,8 +495,11 @@ async function finish(
   sandbox: SandboxSession | null,
   failure: string | null,
   config: RelunarConfig,
+  environment?: RunReport["environment"],
+  sandboxImage?: string,
 ): Promise<RunReport> {
   const report = withAgentNextStep({
+    schemaVersion: 2,
     runId,
     status,
     issue: {
@@ -410,6 +508,9 @@ async function finish(
       body: input.issue.body,
       state: input.issue.state,
       url: input.issue.url,
+      labels: input.issue.labels,
+      comments: input.issue.comments,
+      attachments: input.issue.attachments,
     },
     repo: input.repo,
     commit,
@@ -417,6 +518,7 @@ async function finish(
       provider: "daytona",
       id: sandbox?.id ?? null,
       target: sandbox?.target ?? null,
+      image: sandboxImage ?? null,
     },
     commands,
     failure,
@@ -425,6 +527,9 @@ async function finish(
     observed: null,
     expected: null,
     environmentNotes: null,
+    trust: "unverified",
+    artifacts: [],
+    environment,
     nextStep: "",
     startedAt,
     finishedAt: new Date().toISOString(),

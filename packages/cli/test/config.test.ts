@@ -23,6 +23,8 @@ describe("relunar config", () => {
     expect(parseRelunarConfig("version: 1\nsandbox:\n  image: node:22-bookworm\n").sandbox?.image).toBe("node:22-bookworm");
     expect(() => parseRelunarConfig("version: 1\nsandbox:\n  image: ''\n")).toThrow();
     expect(() => parseRelunarConfig("version: 1\nsandbox:\n  resources:\n    memory: 4\n")).toThrow();
+    expect(parseRelunarConfig("version: 1\nsandbox:\n  snapshot: snap-123\n").sandbox?.snapshot).toBe("snap-123");
+    expect(() => parseRelunarConfig("version: 1\nsandbox:\n  image: node:22\n  snapshot: snap-123\n")).toThrow();
   });
 
   test("defaults sandbox auto-stop and sync settings", () => {
@@ -57,6 +59,50 @@ describe("relunar config", () => {
     expect(config.evidence?.reproduced?.requireNonZeroExit).toBe(true);
     expect(config.evidence?.reproduced?.requireOutputMatch).toBe("error|panic");
     expect(config.evidence?.reproduced?.requireArtifacts).toEqual(["repo/repro.log"]);
+  });
+
+  test("parses terminal workspace, environment, services, and artifacts", () => {
+    const config = parseRelunarConfig(
+      [
+        "version: 1",
+        "workspace:",
+        "  workdir: packages/cli",
+        "  checkout: refs/tags/v1.0.0",
+        "  fetchDepth: 0",
+        "  submodules: true",
+        "  lfs: true",
+        "environment:",
+        "  variables:",
+        "    CI: '1'",
+        "  passthrough:",
+        "    - TEST_DATABASE_URL",
+        "services:",
+        "  - name: postgres",
+        "    start: docker compose up -d postgres",
+        "    ready: pg_isready",
+        "    stop: docker compose down",
+        "artifacts:",
+        "  collect:",
+        "    - logs/**",
+        "    - repro/output.txt",
+        "",
+      ].join("\n"),
+    );
+    expect(config.workspace).toEqual({
+      workdir: "packages/cli",
+      checkout: "refs/tags/v1.0.0",
+      fetchDepth: 0,
+      submodules: true,
+      lfs: true,
+    });
+    expect(config.environment).toEqual({ variables: { CI: "1" }, passthrough: ["TEST_DATABASE_URL"] });
+    expect(config.services?.[0]).toEqual({
+      name: "postgres",
+      start: "docker compose up -d postgres",
+      ready: "pg_isready",
+      stop: "docker compose down",
+    });
+    expect(config.artifacts?.collect).toEqual(["logs/**", "repro/output.txt"]);
   });
 
   test("writes init config without overwriting existing file", async () => {

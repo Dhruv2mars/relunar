@@ -2,6 +2,41 @@ import { describe, expect, test } from "bun:test";
 import { GitHubClient } from "../src/github";
 
 describe("GitHubClient", () => {
+  test("retries transient failures then succeeds", async () => {
+    let attempts = 0;
+    const fetchImpl = async () => {
+      attempts += 1;
+      if (attempts < 3) return new Response("temporary", { status: 503, statusText: "Unavailable" });
+      return new Response(JSON.stringify(githubIssue(7)), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const client = new GitHubClient("token", fetchImpl as unknown as typeof fetch, { sleep: async () => undefined });
+    expect((await client.getIssue("owner/repo", 7)).number).toBe(7);
+    expect(attempts).toBe(3);
+  });
+
+  test("does not retry permanent client errors", async () => {
+    let attempts = 0;
+    const fetchImpl = async () => {
+      attempts += 1;
+      return new Response("bad", { status: 404, statusText: "Not Found" });
+    };
+    const client = new GitHubClient("token", fetchImpl as unknown as typeof fetch, { sleep: async () => undefined });
+    await expect(client.getIssue("owner/repo", 7)).rejects.toThrow("GitHub API 404");
+    expect(attempts).toBe(1);
+  });
+  test("fetches maintainer issue context including labels, comments, and attachments", async () => {
+    const fetchImpl = async (url: string | URL | Request) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/comments")) {
+        return jsonResponse([{ user: { login: "maintainer" }, body: "Trace: https://example.com/trace.log", created_at: "2026-01-02T00:00:00Z", html_url: "https://github.com/o/r/issues/1#issuecomment-1" }]);
+      }
+      return jsonResponse({ ...githubIssue(1), labels: [{ name: "bug" }], body: "Repro https://example.com/repro.ts" });
+    };
+    const context = await new GitHubClient("token", fetchImpl as typeof fetch).getIssueContext("owner/repo", 1);
+    expect(context.labels).toEqual(["bug"]);
+    expect(context.comments?.[0]).toMatchObject({ author: "maintainer", body: "Trace: https://example.com/trace.log" });
+    expect(context.attachments).toEqual(["https://example.com/repro.ts", "https://example.com/trace.log"]);
+  });
   test("paginates issues and filters pull requests", async () => {
     const requests: string[] = [];
     const fetchImpl = async (url: string | URL | Request) => {
