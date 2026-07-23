@@ -379,7 +379,11 @@ async function cleanupReproUnlocked(input: {
   if (report.cleanup?.status === "completed") return report;
   const config = await configForRun(input.cwd, report);
   report.cleanup = { status: "pending", error: null, updatedAt: new Date().toISOString() };
-  await persistRun(input.cwd, report, config.report.maxLogLines);
+  try {
+    await persistRun(input.cwd, report, config.report.maxLogLines);
+  } catch {
+    // Local bookkeeping failure must not prevent disposal of the remote sandbox.
+  }
   try {
     const sandbox = await input.sandboxProvider.resumeSandbox(requireSandboxId(report));
     try {
