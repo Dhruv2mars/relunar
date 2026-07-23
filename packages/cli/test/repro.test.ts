@@ -126,6 +126,7 @@ describe("repro runner", () => {
       let requestedImage: string | undefined;
       let requestedResources: SandboxResources | undefined;
       let requestedAutoStop: number | undefined;
+      let requestedTimeout: number | undefined;
 
       await runRepro({
         cwd,
@@ -137,6 +138,7 @@ describe("repro runner", () => {
             requestedImage = input.image;
             requestedResources = input.resources;
             requestedAutoStop = input.autoStopMinutes;
+            requestedTimeout = input.timeoutSeconds;
             return sandbox;
           },
           resumeSandbox: async () => sandbox,
@@ -146,6 +148,7 @@ describe("repro runner", () => {
       expect(requestedImage).toBe("node:22-bookworm");
       expect(requestedResources).toEqual({ cpu: 4, memory: 8, disk: 20 });
       expect(requestedAutoStop).toBe(60);
+      expect(requestedTimeout).toBe(300);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

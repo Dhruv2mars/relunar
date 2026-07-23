@@ -2,6 +2,8 @@ import { CodeLanguage, Daytona, type DaytonaConfig } from "@daytona/sdk";
 import { DEFAULT_AUTO_STOP_MINUTES } from "./config";
 import type { CreateSandboxInput, SandboxProvider, SandboxSession } from "./types";
 
+const MIN_LIFECYCLE_TIMEOUT_SECONDS = 300;
+
 export type DaytonaProviderOptions = {
   apiKey: string;
   apiUrl?: string | undefined;
@@ -27,6 +29,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
   async createSandbox(input: CreateSandboxInput): Promise<SandboxSession> {
     const autoStopInterval = input.autoStopMinutes ?? DEFAULT_AUTO_STOP_MINUTES;
+    const lifecycleTimeout = resolveSandboxLifecycleTimeout(input.timeoutSeconds);
     const sandbox = await this.daytona.create(
       {
         ...(input.snapshot
@@ -42,7 +45,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
           runId: input.runId,
         },
       },
-      { timeout: 120 },
+      { timeout: lifecycleTimeout },
     );
 
     return this.session(sandbox, autoStopInterval);
@@ -51,7 +54,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   async resumeSandbox(id: string): Promise<SandboxSession> {
     const sandbox = await this.daytona.get(id);
     if (sandbox.state !== "started") {
-      await sandbox.start(120);
+      await sandbox.start(MIN_LIFECYCLE_TIMEOUT_SECONDS);
     }
     const autoStopInterval = sandbox.autoStopInterval ?? DEFAULT_AUTO_STOP_MINUTES;
     return this.session(sandbox, autoStopInterval);
@@ -114,6 +117,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       },
     };
   }
+}
+
+/** Cold image pulls routinely exceed Daytona's former 120-second default. */
+export function resolveSandboxLifecycleTimeout(configured?: number): number {
+  return Math.max(MIN_LIFECYCLE_TIMEOUT_SECONDS, configured ?? 0);
 }
 
 function isTimeoutError(error: unknown): boolean {

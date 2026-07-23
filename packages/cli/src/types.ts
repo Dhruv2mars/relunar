@@ -248,6 +248,8 @@ export type CreateSandboxInput = {
   snapshot?: string | undefined;
   resources?: SandboxResources | undefined;
   autoStopMinutes?: number | undefined;
+  /** Provider lifecycle timeout; should cover cold image pulls. */
+  timeoutSeconds?: number | undefined;
 };
 
 export type SandboxProvider = {

@@ -57,6 +57,7 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
       snapshot: config.sandbox?.snapshot,
       resources: config.sandbox?.resources,
       autoStopMinutes: resolveAutoStopMinutes(config),
+      timeoutSeconds: commandTimeoutSeconds,
     });
 
     commands.push(
