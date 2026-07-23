@@ -22,8 +22,9 @@ describe("agent-driven repro lifecycle", () => {
       expect(started.nextStep).toContain("not reproduced");
       expect(sandbox.disposed).toBe(false);
 
-      const uploaded = await uploadReproFile({ cwd, runId: started.runId, localPath: "repro.ts", remotePath: "repo/repro.ts", sandboxProvider: provider });
+      const uploaded = await uploadReproFile({ cwd, runId: started.runId, localPath: "repro.ts", remotePath: "repro.ts", sandboxProvider: provider });
       expect(uploaded.commands.at(-1)?.name).toBe("repro_upload");
+      expect(sandbox.uploads.at(-1)).toEqual({ localPath: "repro.ts", remotePath: "repo/repro.ts" });
 
       const executed = await execRepro({
         cwd,
@@ -94,6 +95,21 @@ describe("agent-driven repro lifecycle", () => {
         evidenceIds: ["probe-1"],
         sandboxProvider: provider,
       })).rejects.toThrow("verified passing probe assertion");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("uploads relative to the configured repository workdir and rejects traversal", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-upload-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\nworkspace:\n  workdir: packages/cli\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      await uploadReproFile({ cwd, runId: started.runId, localPath: "probe.ts", remotePath: "probes/probe.ts", sandboxProvider: provider });
+      expect(sandbox.uploads.at(-1)?.remotePath).toBe("repo/packages/cli/probes/probe.ts");
+      await expect(uploadReproFile({ cwd, runId: started.runId, localPath: "probe.ts", remotePath: "../probe.ts", sandboxProvider: provider })).rejects.toThrow("Unsafe remote upload path");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -311,6 +327,7 @@ class FakeSandbox implements SandboxSession {
   readonly target = "test";
   disposed = false;
   touchCount = 0;
+  readonly uploads: Array<{ localPath: string; remotePath: string }> = [];
 
   async run(command: string): Promise<SandboxExecResult> {
     if (command.includes("git rev-parse")) return ok("abc123\n");
@@ -319,8 +336,7 @@ class FakeSandbox implements SandboxSession {
   }
 
   async upload(localPath: string, remotePath: string): Promise<void> {
-    expect(localPath).toBe("repro.ts");
-    expect(remotePath).toBe("repo/repro.ts");
+    this.uploads.push({ localPath, remotePath });
   }
 
   async touchIdle(): Promise<void> {

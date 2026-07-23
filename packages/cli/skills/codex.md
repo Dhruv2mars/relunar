@@ -31,7 +31,7 @@ relunar auth daytona --api-key <key>
 relunar repo link owner/repo
 relunar issues list --state open --limit 20 --json
 relunar repro start 123
-relunar repro upload <run-id> ./repro.ts repo/repro.ts
+relunar repro upload <run-id> ./repro.ts repro.ts
 relunar repro exec <run-id> --expect-exit 1 --stderr-match "Error: boom" -- bun repro.ts
 relunar repro finish <run-id> --outcome reproduced --summary "Observed compiler crash with supplied source." --repro-steps "1. Run bun repro.ts" --observed "Error: boom" --expected "No crash" --environment "bun 1.2" --comment
 relunar repro abort <run-id>

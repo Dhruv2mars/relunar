@@ -456,7 +456,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     });
   } else if (action === "upload") {
     if (!args[1] || !args[2] || !args[3]) {
-      deps.io.stderr("Usage: relunar repro upload <run-id> <local-path> <remote-path>\n");
+      deps.io.stderr("Usage: relunar repro upload <run-id> <local-path> <repo-relative-path>\n");
       return 1;
     }
     report = await uploadReproFile({ cwd: deps.cwd, runId: args[1], localPath: args[2], remotePath: args[3], sandboxProvider: provider });
@@ -758,7 +758,7 @@ Agent workflow:
      Or multi-step:
        relunar repro start <issue-number>
        relunar repro sync <run-id> [--include-untracked]
-       relunar repro upload <run-id> <local-path> <remote-path>
+       relunar repro upload <run-id> <local-path> <repo-relative-path>
        relunar repro exec <run-id> --claim <issue-behavior> [--sync] -- <command>
   4. Agent judges outcome from probe evidence, then finishes with narrative fields
      (Relunar formats the comment; it does not invent repro steps):
@@ -805,7 +805,7 @@ Commands:
   relunar repro start <issue-number>
   relunar repro sync <run-id> [--include-untracked]
   relunar repro exec <run-id> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] -- <command>
-  relunar repro upload <run-id> <local-path> <remote-path>
+  relunar repro upload <run-id> <local-path> <repo-relative-path>
   relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]
   relunar repro abort <run-id>
   relunar repro comment preview <run-id>

@@ -24,7 +24,7 @@ bunx @dhruv2mars/relunar
 | One-shot + finish | `relunar repro <n> --finish --outcome … --summary … [--comment] -- <probe>` |
 | Start sandbox | `relunar repro start <n>` |
 | Sync dirty tree | `relunar repro sync <run-id> [--include-untracked]` |
-| Upload file | `relunar repro upload <run-id> <local> <remote>` |
+| Upload file | `relunar repro upload <run-id> <local> <repo-relative-path>` |
 | Exec in sandbox | `relunar repro exec <run-id> [assertion flags] -- <cmd>` |
 | Finish | `relunar repro finish <run-id> --outcome … --summary … [narrative flags] [--comment]` |
 | Abort | `relunar repro abort <run-id>` |

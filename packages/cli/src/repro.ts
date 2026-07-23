@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { collectArtifacts } from "./artifacts";
 import { parseRelunarConfig, defaultRelunarConfig, resolveAutoStopMinutes } from "./config";
 import { assertEvidenceGates } from "./evidence";
@@ -225,11 +225,12 @@ export async function uploadReproFile(input: { cwd: string; runId: string; local
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
+  const remotePath = resolveRemoteUploadPath(resolveWorkdir(config.workspace?.workdir), input.remotePath);
   const started = Date.now();
-  await sandbox.upload(input.localPath, input.remotePath);
+  await sandbox.upload(input.localPath, remotePath);
   report.commands.push({
     name: "repro_upload",
-    command: `upload ${input.localPath} ${input.remotePath}`,
+    command: `upload ${input.localPath} ${remotePath}`,
     status: "passed",
     exitCode: 0,
     durationMs: Date.now() - started,
@@ -238,6 +239,13 @@ export async function uploadReproFile(input: { cwd: string; runId: string; local
   });
   report.finishedAt = new Date().toISOString();
   return await persistRun(input.cwd, report, config.report.maxLogLines);
+}
+
+export function resolveRemoteUploadPath(workdir: string, remotePath: string): string {
+  if (!remotePath || posix.isAbsolute(remotePath) || remotePath.split("/").includes("..")) {
+    throw new Error(`Unsafe remote upload path: ${remotePath}`);
+  }
+  return posix.join(workdir, remotePath);
 }
 
 export type FinishNarrative = {
