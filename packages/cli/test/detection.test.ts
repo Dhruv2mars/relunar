@@ -31,6 +31,19 @@ describe("sandbox image detection", () => {
     }
   });
 
+  test("preserves comma-brace text inside JSONC strings", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-jsonc-string-"));
+    try {
+      await mkdir(join(cwd, ".devcontainer"));
+      await writeFile(join(cwd, ".devcontainer", "devcontainer.json"), `{
+        "image": "registry.example/node,}",
+      }`);
+      expect(await detectSandboxImage(cwd)).toBe("registry.example/node,}");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("detects rust, python, go, and node toolchains", async () => {
     const cases: Array<[string, string, string]> = [
       ["rust-toolchain.toml", '[toolchain]\nchannel = "1.80.1"\n', "rust:1.80.1-bookworm"],

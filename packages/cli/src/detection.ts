@@ -94,7 +94,31 @@ function stripJsonComments(value: string): string {
 }
 
 function removeTrailingCommas(value: string): string {
-  return value.replace(/,(\s*[}\]])/g, "$1");
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]!;
+    if (inString) {
+      result += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      result += char;
+      continue;
+    }
+    if (char === ",") {
+      let next = index + 1;
+      while (next < value.length && /\s/.test(value[next]!)) next += 1;
+      if (value[next] === "}" || value[next] === "]") continue;
+    }
+    result += char;
+  }
+  return result;
 }
 
 function legacyVersion(value: string, minimumMajor: number, minimumMinor: number): boolean {

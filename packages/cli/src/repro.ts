@@ -7,7 +7,7 @@ import { detectSandboxImage } from "./detection";
 import { prepareTerminalEnvironment, resolveCommandEnv, resolveWorkdir } from "./environment";
 import { executeProbe } from "./probe";
 import { redactSecret, withAgentNextStep } from "./reports";
-import { createRunId, readRun, runStoreDir, writeRun } from "./runs";
+import { createRunId, readRun, runStoreDir, withRunLock, writeRun } from "./runs";
 import { syncWorktree } from "./sync";
 import type { CommandEvidence, Issue, ProbeExpectations, RelunarConfig, RepoSlug, ReproOutcome, RunReport, SandboxProvider, SandboxSession } from "./types";
 
@@ -171,6 +171,10 @@ export type ExecReproInput = {
 };
 
 export async function execRepro(input: ExecReproInput): Promise<RunReport> {
+  return withRunLock(input.cwd, input.runId, () => execReproUnlocked(input));
+}
+
+async function execReproUnlocked(input: ExecReproInput): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = await configForRun(input.cwd, report);
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
@@ -218,6 +222,15 @@ export async function syncRepro(input: {
   sandboxProvider: SandboxProvider;
   includeUntracked?: boolean | undefined;
 }): Promise<RunReport> {
+  return withRunLock(input.cwd, input.runId, () => syncReproUnlocked(input));
+}
+
+async function syncReproUnlocked(input: {
+  cwd: string;
+  runId: string;
+  sandboxProvider: SandboxProvider;
+  includeUntracked?: boolean | undefined;
+}): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = await configForRun(input.cwd, report);
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
@@ -232,6 +245,10 @@ export async function syncRepro(input: {
 }
 
 export async function uploadReproFile(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+  return withRunLock(input.cwd, input.runId, () => uploadReproFileUnlocked(input));
+}
+
+async function uploadReproFileUnlocked(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = await configForRun(input.cwd, report);
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
@@ -268,6 +285,18 @@ export type FinishNarrative = {
 };
 
 export async function finishRepro(
+  input: {
+    cwd: string;
+    runId: string;
+    outcome: ReproOutcome;
+    sandboxProvider: SandboxProvider;
+    skipEvidenceGates?: boolean | undefined;
+  } & FinishNarrative,
+): Promise<RunReport> {
+  return withRunLock(input.cwd, input.runId, () => finishReproUnlocked(input));
+}
+
+async function finishReproUnlocked(
   input: {
     cwd: string;
     runId: string;
@@ -338,6 +367,14 @@ export async function cleanupRepro(input: {
   runId: string;
   sandboxProvider: SandboxProvider;
 }): Promise<RunReport> {
+  return withRunLock(input.cwd, input.runId, () => cleanupReproUnlocked(input));
+}
+
+async function cleanupReproUnlocked(input: {
+  cwd: string;
+  runId: string;
+  sandboxProvider: SandboxProvider;
+}): Promise<RunReport> {
   const report = await readRun(input.cwd, input.runId);
   if (report.cleanup?.status === "completed") return report;
   const config = await configForRun(input.cwd, report);
@@ -371,6 +408,10 @@ function optionalText(value: string | undefined): string | null {
 }
 
 export async function abortRepro(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
+  return withRunLock(input.cwd, input.runId, () => abortReproUnlocked(input));
+}
+
+async function abortReproUnlocked(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
   const config = await configForRun(input.cwd, report);
   try {

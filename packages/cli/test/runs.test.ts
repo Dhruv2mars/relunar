@@ -47,15 +47,26 @@ describe("durable run store", () => {
     }
   });
 
-  test("reclaims a run lock left by a dead process", async () => {
+  test("reclaims a dead run lock once under concurrent contention", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-runs-stale-lock-"));
     try {
       await writeRun(cwd, report(), 40);
       const dir = join(cwd, ".relunar", "runs", "issue-1-test");
       await mkdir(dir, { recursive: true });
       await writeFile(join(dir, "run.lock"), `999999 ${new Date().toISOString()}\n`);
-      await updateRun(cwd, "issue-1-test", 40, (current) => ({ ...current, summary: "recovered" }));
-      expect((await readRun(cwd, "issue-1-test")).summary).toBe("recovered");
+      await Promise.all(Array.from({ length: 20 }, () =>
+        updateRun(cwd, "issue-1-test", 40, (current) => ({
+          ...current,
+          publication: {
+            status: "failed",
+            attempts: (current.publication?.attempts ?? 0) + 1,
+            commentUrl: null,
+            error: "test",
+            updatedAt: new Date().toISOString(),
+          },
+        })),
+      ));
+      expect((await readRun(cwd, "issue-1-test")).publication?.attempts).toBe(20);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

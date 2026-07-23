@@ -8,6 +8,15 @@ import {
   flagPositiveInteger,
   flagString,
 } from "./args";
+import { contextualHelp, helpText } from "./cli-help";
+import {
+  hasCompleteNarrative,
+  optionalTrueFlag,
+  parseFinishNarrative,
+  parseOutcome,
+  parseProbeOptions,
+  shellCommand,
+} from "./cli-probe-options";
 import {
   findLinkedRepo,
   globalConfigPath,
@@ -51,10 +60,8 @@ import {
   supportedSkills,
 } from "./skills";
 import type {
-  ProbeExpectations,
   RelunarConfig,
   RepoSlug,
-  ReproOutcome,
   RunReport,
 } from "./types";
 import type { SecretName } from "./credentials";
@@ -782,173 +789,6 @@ async function printEvidence(deps: CliDeps, runId: string, json: boolean): Promi
   return 0;
 }
 
-function parseOutcome(value: string | undefined): ReproOutcome | null {
-  if (value === "reproduced" || value === "blocked") return value;
-  if (value === "not-reproduced") return "not_reproduced";
-  return null;
-}
-
-/** True only when the flag is explicitly set; otherwise undefined so config defaults apply. */
-function optionalTrueFlag(
-  flags: Record<string, string | boolean>,
-  name: string,
-): true | undefined {
-  return flagBoolean(flags, name) ? true : undefined;
-}
-
-/** Agent-authored narrative for maintainer comments. Relunar formats; does not invent steps. */
-function parseFinishNarrative(flags: Record<string, string | boolean>): {
-  summary: string;
-  reproSteps?: string;
-  observed?: string;
-  expected?: string;
-  environmentNotes?: string;
-  evidenceIds?: string[];
-} | null {
-  const summary = flagString(flags, "summary")?.trim();
-  if (!summary) {
-    return null;
-  }
-  const narrative: {
-    summary: string;
-    reproSteps?: string;
-    observed?: string;
-    expected?: string;
-    environmentNotes?: string;
-    evidenceIds?: string[];
-  } = { summary };
-  const reproSteps = flagString(flags, "repro-steps")?.trim();
-  const observed = flagString(flags, "observed")?.trim();
-  const expected = flagString(flags, "expected")?.trim();
-  const environmentNotes = flagString(flags, "environment")?.trim();
-  const evidenceIds = flagString(flags, "evidence")
-    ?.split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (reproSteps) narrative.reproSteps = reproSteps;
-  if (observed) narrative.observed = observed;
-  if (expected) narrative.expected = expected;
-  if (environmentNotes) narrative.environmentNotes = environmentNotes;
-  if (evidenceIds?.length) narrative.evidenceIds = evidenceIds;
-  return narrative;
-}
-
-function hasCompleteNarrative(narrative: NonNullable<ReturnType<typeof parseFinishNarrative>>): boolean {
-  return Boolean(
-    narrative.reproSteps?.trim() &&
-      narrative.observed?.trim() &&
-      narrative.expected?.trim() &&
-      narrative.environmentNotes?.trim(),
-  );
-}
-
-function shellCommand(args: string[]): string {
-  return args
-    .map((arg) =>
-      /^[A-Za-z0-9_./:=@%+,-]+$/.test(arg)
-        ? arg
-        : `'${arg.replaceAll("'", `'\\''`)}'`,
-    )
-    .join(" ");
-}
-
-function parseProbeOptions(flags: Record<string, string | boolean>): {
-  expectations: ProbeExpectations;
-  repeat?: number;
-  resetCommand?: string;
-  control?: { command: string; expectations: ProbeExpectations };
-  claim?: string;
-} {
-  const valueFlags = [
-    "claim",
-    "expect-exit",
-    "stdout-match",
-    "stderr-match",
-    "output-match",
-    "file-exists",
-    "max-duration-ms",
-    "repeat",
-    "reset-command",
-    "control-command",
-    "control-expect-exit",
-    "control-output-match",
-  ];
-  for (const name of valueFlags) {
-    if (flagNeedsValue(flags, name))
-      throw new Error(`Missing value for --${name}.`);
-  }
-
-  const expectations: ProbeExpectations = {};
-  const exit = flagString(flags, "expect-exit");
-  if (exit !== undefined) {
-    if (!/^-?\d+$/.test(exit))
-      throw new Error("--expect-exit must be an integer.");
-    expectations.exitCode = Number.parseInt(exit, 10);
-  }
-  const stdout = flagString(flags, "stdout-match");
-  const stderr = flagString(flags, "stderr-match");
-  const output = flagString(flags, "output-match");
-  if (stdout) expectations.stdoutMatches = stdout;
-  if (stderr) expectations.stderrMatches = stderr;
-  if (output) expectations.outputMatches = output;
-  const files = flagString(flags, "file-exists")
-    ?.split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (files?.length) expectations.filesExist = files;
-
-  const maxDuration = parsePositiveFlag(flags, "max-duration-ms");
-  if (maxDuration !== undefined) expectations.maxDurationMs = maxDuration;
-  const repeat = parsePositiveFlag(flags, "repeat");
-  const resetCommand = flagString(flags, "reset-command")?.trim();
-  const controlCommand = flagString(flags, "control-command")?.trim();
-  const controlExpectations: ProbeExpectations = {};
-  const controlExit = flagString(flags, "control-expect-exit");
-  if (controlExit !== undefined) {
-    if (!/^-?\d+$/.test(controlExit))
-      throw new Error("--control-expect-exit must be an integer.");
-    controlExpectations.exitCode = Number.parseInt(controlExit, 10);
-  }
-  const controlOutput = flagString(flags, "control-output-match")?.trim();
-  const claim = flagString(flags, "claim")?.trim();
-  if (Object.keys(expectations).length > 0 && !claim) {
-    throw new Error(
-      "Machine-asserted probes require --claim describing the issue behavior being tested.",
-    );
-  }
-  if (controlOutput) controlExpectations.outputMatches = controlOutput;
-  if ((controlExit !== undefined || controlOutput) && !controlCommand)
-    throw new Error("Control expectations require --control-command.");
-  if (controlCommand && Object.keys(controlExpectations).length === 0)
-    throw new Error(
-      "--control-command requires --control-expect-exit or --control-output-match.",
-    );
-  return {
-    expectations,
-    ...(repeat !== undefined ? { repeat } : {}),
-    ...(resetCommand ? { resetCommand } : {}),
-    ...(controlCommand
-      ? {
-          control: {
-            command: controlCommand,
-            expectations: controlExpectations,
-          },
-        }
-      : {}),
-    ...(claim ? { claim } : {}),
-  };
-}
-
-function parsePositiveFlag(
-  flags: Record<string, string | boolean>,
-  name: string,
-): number | undefined {
-  const value = flagString(flags, name);
-  if (value === undefined) return undefined;
-  if (!/^[1-9]\d*$/.test(value))
-    throw new Error(`--${name} must be a positive integer.`);
-  return Number.parseInt(value, 10);
-}
 
 async function runsList(
   flags: Record<string, string | boolean>,
@@ -1101,104 +941,6 @@ function renderSetupNextSteps(
   }
   lines.push("  relunar doctor");
   return `${lines.join("\n")}\n`;
-}
-
-function helpText(): string {
-  return `Relunar CLI
-
-Agents are the primary users. Relunar is a harness (not an agent): it does not invent repro steps.
-
-Agent workflow:
-  1. relunar doctor [--json]
-  2. relunar issues list --state open --limit 20 --json
-  3. One-shot probe (start or resume, run probe, leave sandbox warm):
-       relunar repro <issue-number> --claim <issue-behavior> [--sync] -- <probe-command>
-     Or multi-step:
-       relunar repro start <issue-number>
-       relunar repro sync <run-id> [--include-untracked]
-       relunar repro upload <run-id> <local-path> <repo-relative-path>
-       relunar repro exec <run-id> --claim <issue-behavior> [--sync] -- <command>
-  4. Agent judges outcome from probe evidence, then finishes with narrative fields
-     (Relunar formats the comment; it does not invent repro steps):
-       relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked \\
-         --evidence probe-N --summary <text> [--repro-steps <text>] [--observed <text>] \\
-         [--expected <text>] [--environment <text>] [--comment]
-
-  Sandbox stays warm until finish/abort. Idle auto-stop defaults to 60m (sandbox.autoStopMinutes).
-  Sync dirty local edits with --sync or sync.onExec in .relunar.yml.
-  Probe assertions: --expect-exit N, --stdout-match REGEX, --stderr-match REGEX,
-    --output-match REGEX, --file-exists PATH[,PATH], --max-duration-ms N, --repeat N.
-    Optional: --control-command CMD with control assertion; --reset-command CMD between repeats.
-  Finish derives trust from assertions. Arbitrary output is never verified proof.
-  Reproduced and not-reproduced outcomes require all four narrative fields.
-
-  environment_ready means the sandbox is ready — not that the issue was reproduced.
-  Put finish flags before \`--\` when combining with one-shot:
-       relunar repro <issue> --finish --outcome reproduced --summary "..." --repro-steps "..." -- <probe-command>
-
-Human setup (once):
-  1. npm install -g @dhruv2mars/relunar
-  2. relunar setup
-  3. cd target-repo && relunar init
-  4. relunar repo link owner/repo
-
-Machine setup:
-  relunar setup
-  relunar auth github [--token <token>]
-  relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
-
-Repo setup:
-  relunar init                         # creates .relunar.yml
-  relunar repo link owner/repo
-
-Commands:
-  relunar init
-  relunar setup
-  relunar doctor [--json]
-  relunar auth github [--token <token>]
-  relunar auth daytona --api-key <key> [--api-url <url>] [--target <target>]
-  relunar repo link owner/repo
-  relunar issues list [--state open|closed|all] [--limit N] [--json]
-  relunar repro <issue-number> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--output-match REGEX] [--repeat N] -- <probe-command>
-  relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates] -- <probe-command>
-  relunar repro start <issue-number>
-  relunar repro sync <run-id> [--include-untracked]
-  relunar repro exec <run-id> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] -- <command>
-  relunar repro evidence <run-id> [--json]
-  relunar repro upload <run-id> <local-path> <repo-relative-path>
-  relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]
-  relunar repro abort <run-id>
-  relunar repro comment preview <run-id>
-  relunar repro comment post <run-id>
-  relunar repro cleanup <run-id>  # finished runs only; use abort for active runs
-  relunar runs list [--json]
-  relunar runs show <run-id> [--json]
-  relunar sandboxes list
-  relunar sandboxes gc [--confirm]
-  relunar skills list|get|install [agent]
-`;
-}
-
-function contextualHelp(positionals: string[]): string {
-  const path = positionals.join(" ");
-  if (path === "repro exec") {
-    return `Usage: relunar repro exec <run-id> --claim <issue-behavior> [--sync] [--include-untracked] [--expect-exit N] [--stdout-match REGEX] [--stderr-match REGEX] [--output-match REGEX] [--file-exists PATH[,PATH]] [--max-duration-ms N] [--repeat N] [--control-command CMD] [--reset-command CMD] -- <command>\n\nAsserted probes return an evidenceId such as probe-1. Assertion mismatches are recorded as evidence and do not make the harness command fail.\n`;
-  }
-  if (path === "repro finish") {
-    return `Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --evidence probe-N[,probe-N] --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]\n\nSelect only evidence for the issue claim. Omit --evidence only for blocked when no relevant probe can run. Reproduced and not-reproduced outcomes require all four narrative fields.\n`;
-  }
-  if (path === "repro evidence")
-    return "Usage: relunar repro evidence <run-id> [--json]\n\nLists exact selectable evidence IDs, claims, assertion status, and attempts without requiring GitHub or Daytona access.\n";
-  if (path === "repro start")
-    return "Usage: relunar repro start <issue-number> [--json]\n";
-  if (path === "repro comment preview")
-    return "Usage: relunar repro comment preview <run-id>\n";
-  if (path === "repro comment post")
-    return "Usage: relunar repro comment post <run-id>\n";
-  if (path === "issues" || path === "issues list") {
-    return "Usage: relunar issues list [--state open|closed|all] [--limit N] [--json]\n";
-  }
-  return helpText();
 }
 
 function configPath(deps: CliDeps): string {

@@ -143,6 +143,32 @@ describe("assertion-driven probes", () => {
     expect(evidence?.command).toBe("tool --token [redacted]");
   });
 
+  test("redacts secrets from control and reset command text", async () => {
+    const sandbox = new ProbeSandbox([
+      result(0, "", ""),
+      result(0, "", ""),
+      result(0, "", ""),
+      result(0, "", ""),
+    ]);
+    const evidence = await executeProbe({
+      sandbox,
+      command: "probe super-secret",
+      cwd: "repo",
+      timeoutSeconds: 30,
+      expectations: { exitCode: 0 },
+      repeat: 2,
+      resetCommand: "reset super-secret",
+      control: { command: "control super-secret", expectations: { exitCode: 0 } },
+      secrets: ["super-secret"],
+    });
+    expect(evidence.map((item) => item.command)).toEqual([
+      "control [redacted]",
+      "probe [redacted]",
+      "reset [redacted]",
+      "probe [redacted]",
+    ]);
+  });
+
   test("records a Daytona-style timeout as a failed assertion without losing evidence", async () => {
     const sandbox = new ProbeSandbox([{ exitCode: null, stdout: "partial output", stderr: "", timedOut: true }]);
     const [evidence] = await executeProbe({

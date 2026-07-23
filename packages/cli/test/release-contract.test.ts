@@ -104,6 +104,14 @@ describe("release contract", () => {
     expect(command).toContain("--yes");
   });
 
+  test("real E2E uses the distribution runtime and always cleans up", () => {
+    const smoke = readFileSync(join(repoRoot, "packages", "cli", "scripts", "e2e-smoke.mjs"), "utf8");
+    expect(smoke).toContain('const nodeBin = process.env.RELUNAR_E2E_NODE ?? "node"');
+    expect(smoke).not.toContain("execFileSync(process.execPath");
+    expect(smoke).toContain('["repro", "cleanup", report.runId]');
+    expect(smoke).toContain("bestEffortStop(activeRunId");
+  });
+
   test("release tag script prints package version tag", () => {
     const packageJson = JSON.parse(readFileSync(join(repoRoot, "packages", "cli", "package.json"), "utf8"));
     const output = execFileSync("node", ["scripts/release-tag.mjs", "--print"], {

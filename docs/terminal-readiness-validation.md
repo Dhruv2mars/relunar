@@ -22,7 +22,9 @@ All tests launched Cursor CLI headlessly with the installed Relunar skill and on
 | `Dhruv2mars/service-monorepo-relunar-testbed` | `use relunar to reproduce issue 1 without posting a comment`    | `issue-1-2026-07-23T140953464Z`    | `reproduced`, verified from a fresh clone with untouched generated config; the Bun workspace CLI obtained its prefix from a live mock HTTP service and lowercased `Ada`                       |
 | `BurntSushi/ripgrep` (fresh clone)            | `use relunar to reproduce issue 13 without posting a comment`   | `issue-13-2026-07-23T160718465Z`   | `not-reproduced`, verified from untouched generated config; Cargo metadata selected the Rust image automatically, version output remained present, and the asserted exit 2 mismatched exit 0 |
 | `bats-core/bats-core` (fresh clone)            | `use relunar to reproduce issue 1219 without posting a comment` | `issue-1219-2026-07-23T162418540Z` | `reproduced`, verified after the final usability fixes; generated baseline passed unchanged, concise evidence listing identified `probe-11`, no comment was posted, and cleanup completed     |
-| `spf13/pflag` (packed `0.3.0` install)         | `use relunar to reproduce issue 415 without posting a comment`  | `issue-415-2026-07-23T163501358Z`  | `reproduced`, verified using an isolated npm-tarball installation; `--array ""` produced one empty element, no comment was posted, and cleanup completed                              |
+| `spf13/pflag` (packed `0.3.0` install)         | `use relunar to reproduce issue 415 without posting a comment`  | `issue-415-2026-07-23T163501358Z`  | `reproduced`, verified using an isolated npm-tarball installation; `--array ""` produced one empty element, no comment was posted, and cleanup completed                                          |
+| `spf13/pflag` (fresh packed `0.3.0` install)   | `use relunar to reproduce issue 415 without posting a comment`  | `issue-415-2026-07-23T164800717Z`  | `reproduced`, verified from a fresh clone using only the isolated packed binary on Cursor's `PATH`; complete narrative persisted, no comment was posted, cleanup completed, and no sandbox remained |
+| `pallets/click` (fresh packed `0.3.0` install) | `use relunar to reproduce issue 3571 without posting a comment` | `issue-3571-2026-07-23T171604431Z` | `reproduced`, verified from a fresh clone using only the post-hardening packed binary; Cursor isolated the 14/20 final-position defect, selected `probe-4`, posted no comment, and completed cleanup             |
 
 All runs persisted full commit SHAs, machine checks, environment fingerprints, complete maintainer narratives, and completed cleanup records. `relunar sandboxes list` returned an empty list after the runs, and `relunar sandboxes gc` reported no orphan to delete.
 
@@ -34,10 +36,12 @@ The final fresh Rust and Bats passes additionally exposed Cargo-only image detec
 
 The final package-level pass installed the generated `0.3.0` npm tarball into an isolated prefix and placed only that binary first on Cursor's `PATH`. The complete Go lifecycle succeeded. During recovery from an initial probe, it also showed that `bash -lc` can replace the Go image's toolchain path; the shipped skill now prescribes `bash -c` for compound probes so the prepared environment is preserved.
 
+After lifecycle serialization and CLI decomposition, the real Node-distribution E2E completed a verified `not_reproduced` lifecycle against `Dhruv2mars/relunar#14`, explicitly cleaned up, and left no sandbox. A newly packed tarball then completed the Click Python testbed from the one-line Cursor prompt with verified reproduced evidence and the same zero-sandbox result.
+
 ## Automated gates
 
 - CLI typecheck passes.
-- The CLI unit and integration suite covers assertion mismatch, claim-linked evidence selection, repeated probes, controls, cold-start timeouts, legacy toolchain images, workdir-relative uploads, artifact collection, service/environment setup, comment retry and concurrent idempotency, atomic config/run updates, schema migration, GitHub retry, and orphan sandbox recovery.
+- The CLI unit and integration suite covers assertion mismatch, claim-linked evidence selection, repeated probes, failed-reset rejection, secret redaction across probe/control/reset commands, concurrent lifecycle serialization, controls, cold-start timeouts, legacy toolchain images, workdir-relative uploads, artifact collection, service/environment setup, comment retry and concurrent idempotency, atomic config/run updates, schema migration, GitHub retry, and orphan sandbox recovery.
 - The regression manifest contains 33 issues across Rust, TypeScript, Python, Go, C, Java, JavaScript, and shell, including explicit `reproduced`, `not-reproduced`, and `blocked` disposition coverage.
 - The packed npm artifact executes its public help command.
 - Fresh npm and Bun projects both install the generated package tarball and execute its public help command.

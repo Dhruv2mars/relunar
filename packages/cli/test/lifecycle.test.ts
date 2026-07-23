@@ -5,10 +5,66 @@ import { tmpdir } from "node:os";
 import { parseArgs } from "../src/args";
 import { parseRelunarConfig } from "../src/config";
 import { cleanupRepro, execRepro, finishRepro, startRepro, uploadReproFile } from "../src/repro";
-import { findActiveRunForIssue } from "../src/runs";
+import { findActiveRunForIssue, readRun } from "../src/runs";
 import type { Issue, SandboxExecResult, SandboxProvider, SandboxSession } from "../src/types";
 
 describe("agent-driven repro lifecycle", () => {
+  test("serializes concurrent lifecycle mutations without losing evidence", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-concurrent-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\n", "utf8");
+      const sandbox = new ConcurrentProbeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      expect(started).toMatchObject({ status: "environment_ready", failure: null });
+
+      await Promise.all([
+        execRepro({ cwd, runId: started.runId, command: "probe-one", expectations: { exitCode: 0 }, sandboxProvider: provider }),
+        execRepro({ cwd, runId: started.runId, command: "probe-two", expectations: { exitCode: 0 }, sandboxProvider: provider }),
+      ]);
+
+      const stored = await readRun(cwd, started.runId);
+      expect(stored.commands.filter((command) => command.name === "repro").map((command) => command.command).sort())
+        .toEqual(["probe-one", "probe-two"]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("cannot verify repeated evidence after fixture reset fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-reset-failure-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\n", "utf8");
+      const sandbox = new FailingResetSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      const executed = await execRepro({
+        cwd,
+        runId: started.runId,
+        command: "probe",
+        expectations: { exitCode: 0 },
+        repeat: 3,
+        resetCommand: "reset-fixture",
+        claim: "Probe reproduces after an independent reset",
+        sandboxProvider: provider,
+      });
+      expect(executed.commands.filter((command) => command.evidenceId === "probe-1")).toHaveLength(2);
+      await expect(finishRepro({
+        cwd,
+        runId: started.runId,
+        outcome: "reproduced",
+        summary: "Probe reproduced.",
+        reproSteps: "Run probe",
+        observed: "failure",
+        expected: "success",
+        environmentNotes: "test",
+        evidenceIds: ["probe-1"],
+        sandboxProvider: provider,
+      })).rejects.toThrow("requires all 3 repeated probe assertions to pass");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
   test("uses and persists repository configuration before sandbox creation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-remote-config-"));
     try {
@@ -381,6 +437,27 @@ class FakeSandbox implements SandboxSession {
 
   async dispose(): Promise<void> {
     this.disposed = true;
+  }
+}
+
+class ConcurrentProbeSandbox extends FakeSandbox {
+  override async run(command: string, cwd?: string): Promise<SandboxExecResult> {
+    if (command === "probe-one" || command === "probe-two") {
+      if (command === "probe-one") await Bun.sleep(30);
+      this.invocations.push({ command, cwd });
+      return ok("ok");
+    }
+    return super.run(command, cwd);
+  }
+}
+
+class FailingResetSandbox extends FakeSandbox {
+  override async run(command: string, cwd?: string): Promise<SandboxExecResult> {
+    if (command === "reset-fixture") {
+      this.invocations.push({ command, cwd });
+      return { exitCode: 1, stdout: "", stderr: "reset failed", timedOut: false };
+    }
+    return super.run(command, cwd);
   }
 }
 
