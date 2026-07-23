@@ -51,4 +51,16 @@ describe("sandbox image detection", () => {
       }
     }
   });
+
+  test("detects autotools and CMake native projects", async () => {
+    for (const file of ["configure.ac", "CMakeLists.txt"]) {
+      const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-native-"));
+      try {
+        await writeFile(join(cwd, file), "native project\n");
+        expect(await detectSandboxImage(cwd)).toBe("mcr.microsoft.com/devcontainers/cpp:1-debian-12");
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    }
+  });
 });

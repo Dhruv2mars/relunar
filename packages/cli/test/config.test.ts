@@ -118,15 +118,22 @@ describe("relunar config", () => {
     }
   });
 
-  test("detects Go and Python repositories when writing init config", async () => {
+  test("detects Go, Python, and native repositories when writing init config", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-config-detect-"));
     try {
       const goDir = join(dir, "go");
       const pythonDir = join(dir, "python");
+      const autotoolsDir = join(dir, "autotools");
+      const cmakeDir = join(dir, "cmake");
       await Bun.write(join(goDir, "go.mod"), "module example.com/test\n\ngo 1.22\n");
       await Bun.write(join(pythonDir, "pyproject.toml"), "[project]\nname = 'sample'\nversion = '1.0.0'\n");
+      await Bun.write(join(autotoolsDir, "configure.ac"), "AC_INIT([sample], [1.0])\n");
+      await Bun.write(join(autotoolsDir, "vendor", "oniguruma", ".gitkeep"), "");
+      await Bun.write(join(cmakeDir, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\n");
       await writeRelunarConfig(join(goDir, ".relunar.yml"));
       await writeRelunarConfig(join(pythonDir, ".relunar.yml"));
+      await writeRelunarConfig(join(autotoolsDir, ".relunar.yml"));
+      await writeRelunarConfig(join(cmakeDir, ".relunar.yml"));
 
       expect(parseRelunarConfig(await readFile(join(goDir, ".relunar.yml"), "utf8"))).toMatchObject({
         setup: ["go mod download"],
@@ -135,6 +142,16 @@ describe("relunar config", () => {
       expect(parseRelunarConfig(await readFile(join(pythonDir, ".relunar.yml"), "utf8"))).toMatchObject({
         setup: ["python3 -m venv .venv", ". .venv/bin/activate && python -m pip install -e ."],
         baseline: [". .venv/bin/activate && python -m pip check"],
+      });
+      expect(parseRelunarConfig(await readFile(join(autotoolsDir, ".relunar.yml"), "utf8"))).toMatchObject({
+        sandbox: { image: "mcr.microsoft.com/devcontainers/cpp:1-debian-12" },
+        setup: expect.arrayContaining(["autoreconf -i", "./configure --with-oniguruma=builtin --disable-docs", "make -j2"]),
+        baseline: ["make check"],
+      });
+      expect(parseRelunarConfig(await readFile(join(cmakeDir, ".relunar.yml"), "utf8"))).toMatchObject({
+        sandbox: { image: "mcr.microsoft.com/devcontainers/cpp:1-debian-12" },
+        setup: expect.arrayContaining(["cmake -S . -B build -G Ninja", "cmake --build build -j2"]),
+        baseline: ["ctest --test-dir build --output-on-failure"],
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

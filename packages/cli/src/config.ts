@@ -216,6 +216,36 @@ async function detectInitConfig(cwd: string): Promise<RelunarConfig> {
       baseline: [". .venv/bin/activate && python -m pip check"],
     };
   }
+  if (await exists(join(cwd, "configure.ac"))) {
+    const configureCommand = await exists(join(cwd, "vendor", "oniguruma"))
+      ? "./configure --with-oniguruma=builtin --disable-docs"
+      : "./configure";
+    return {
+      ...defaultRelunarConfig,
+      sandbox: { ...defaultRelunarConfig.sandbox, image: "mcr.microsoft.com/devcontainers/cpp:1-debian-12" },
+      setup: [
+        "sudo apt-get update && sudo apt-get install -y autoconf automake libtool make pkg-config",
+        "git submodule update --init --recursive",
+        "autoreconf -i",
+        configureCommand,
+        "make -j2",
+      ],
+      baseline: ["make check"],
+    };
+  }
+  if (await exists(join(cwd, "CMakeLists.txt"))) {
+    return {
+      ...defaultRelunarConfig,
+      sandbox: { ...defaultRelunarConfig.sandbox, image: "mcr.microsoft.com/devcontainers/cpp:1-debian-12" },
+      setup: [
+        "sudo apt-get update && sudo apt-get install -y cmake ninja-build build-essential pkg-config",
+        "git submodule update --init --recursive",
+        "cmake -S . -B build -G Ninja",
+        "cmake --build build -j2",
+      ],
+      baseline: ["ctest --test-dir build --output-on-failure"],
+    };
+  }
   if (await exists(join(cwd, "package-lock.json"))) {
     return { ...defaultRelunarConfig, setup: ["npm ci"], baseline: ["npm test"] };
   }

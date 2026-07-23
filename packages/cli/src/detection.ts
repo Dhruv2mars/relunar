@@ -23,6 +23,10 @@ export async function detectSandboxImage(cwd: string): Promise<string | undefine
   const goVersion = go ? /^go\s+(\d+\.\d+(?:\.\d+)?)/m.exec(go)?.[1] : undefined;
   if (goVersion) return legacyVersion(goVersion, 1, 20) ? "golang:bookworm" : `golang:${goVersion}-bookworm`;
 
+  if (await optionalRead(join(cwd, "configure.ac")) || await optionalRead(join(cwd, "CMakeLists.txt"))) {
+    return "mcr.microsoft.com/devcontainers/cpp:1-debian-12";
+  }
+
   const packageJson = await optionalRead(join(cwd, "package.json"));
   if (packageJson) {
     try {
