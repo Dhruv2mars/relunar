@@ -99,6 +99,8 @@ report:
 
 `repro start` clones the linked GitHub repo into a persistent Daytona sandbox, prepares the configured workspace, services, environment, setup, and baseline. Agents then run probes with explicit exit/output/file/duration assertions. Conclusive outcomes require every repeated probe and optional control to satisfy its assertions. `repro finish` records a complete maintainer narrative and verified trust; comment publication is explicit, previewable, retryable, and idempotent. Configured artifacts are downloaded before cleanup. Use `relunar sandboxes list` and dry-run `relunar sandboxes gc` to recover leaked resources.
 
+Setup commands complete before services launch. Service `start` commands may be ordinary foreground processes; Relunar detaches them, waits on `ready`, records startup evidence, and runs the baseline only after readiness succeeds.
+
 ```txt
 .relunar/runs/<run-id>/
   report.md

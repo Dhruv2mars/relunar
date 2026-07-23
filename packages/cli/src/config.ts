@@ -1,7 +1,6 @@
 import {
   access,
   mkdir,
-  open,
   readFile,
   rename,
   unlink,
@@ -13,7 +12,7 @@ import { homedir } from "node:os";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
 import type { GlobalConfig, RelunarConfig, RepoSlug } from "./types";
-import { reclaimDeadLock } from "./locks";
+import { reclaimDeadLock, tryCreateOwnedLock } from "./locks";
 
 const evidenceGateSchema = z
   .object({
@@ -456,26 +455,16 @@ async function withConfigLock<T>(
   const lockPath = `${path}.lock`;
   const deadline = Date.now() + 30_000;
   while (true) {
-    try {
-      const handle = await open(lockPath, "wx");
-      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
-      await handle.close();
+    if (await tryCreateOwnedLock(lockPath)) {
       try {
         return await action();
       } finally {
         await unlink(lockPath).catch(() => undefined);
       }
-    } catch (error) {
-      if (!(
-        error instanceof Error &&
-        "code" in error &&
-        error.code === "EEXIST"
-      ))
-        throw error;
-      if (await reclaimDeadLock(lockPath)) continue;
-      if (Date.now() >= deadline)
-        throw new Error("Timed out waiting for Relunar global config lock.");
-      await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    if (await reclaimDeadLock(lockPath)) continue;
+    if (Date.now() >= deadline)
+      throw new Error("Timed out waiting for Relunar global config lock.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }

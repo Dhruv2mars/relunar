@@ -1,8 +1,8 @@
-import { mkdir, open, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { renderMarkdownReport } from "./reports";
-import { reclaimDeadLock } from "./locks";
+import { reclaimDeadLock, tryCreateOwnedLock } from "./locks";
 import type { CommandEvidence, RepoSlug, RunReport } from "./types";
 
 export function runStoreDir(cwd: string): string {
@@ -112,19 +112,14 @@ async function acquireRunLock(cwd: string, runId: string): Promise<() => Promise
   const path = join(dir, "run.lock");
   const deadline = Date.now() + 30_000;
   while (true) {
-    try {
-      const handle = await open(path, "wx");
-      await handle.writeFile(`${process.pid} ${new Date().toISOString()}\n`);
-      await handle.close();
+    if (await tryCreateOwnedLock(path)) {
       return async () => {
         await unlink(path).catch(() => undefined);
       };
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-      if (await reclaimDeadLock(path)) continue;
-      if (Date.now() >= deadline) throw new Error(`Timed out waiting for run lock: ${runId}`);
-      await new Promise((resolve) => setTimeout(resolve, 25));
     }
+    if (await reclaimDeadLock(path)) continue;
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for run lock: ${runId}`);
+    await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }
 

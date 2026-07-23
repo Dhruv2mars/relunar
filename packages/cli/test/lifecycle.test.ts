@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseArgs } from "../src/args";
 import { parseRelunarConfig } from "../src/config";
-import { cleanupRepro, execRepro, finishRepro, startRepro, uploadReproFile } from "../src/repro";
+import { cleanupRepro, execRepro, finishRepro, SandboxUnavailableError, startRepro, uploadReproFile } from "../src/repro";
 import { findActiveRunForIssue, readRun } from "../src/runs";
 import type { Issue, SandboxExecResult, SandboxProvider, SandboxSession } from "../src/types";
 
@@ -26,6 +26,60 @@ describe("agent-driven repro lifecycle", () => {
       const stored = await readRun(cwd, started.runId);
       expect(stored.commands.filter((command) => command.name === "repro").map((command) => command.command).sort())
         .toEqual(["probe-one", "probe-two"]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps active runs retryable after transient provider failures", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-transient-resume-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const started = await startRepro(input(cwd, fakeProvider(sandbox)));
+      const provider: SandboxProvider = {
+        createSandbox: async () => sandbox,
+        resumeSandbox: async () => { throw new Error("provider network unavailable"); },
+      };
+
+      await expect(execRepro({
+        cwd,
+        runId: started.runId,
+        command: "probe",
+        expectations: { exitCode: 0 },
+        sandboxProvider: provider,
+      })).rejects.toThrow("provider network unavailable");
+      expect((await readRun(cwd, started.runId)).status).toBe("environment_ready");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("marks a definitively missing sandbox inactive with a typed error", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-missing-resume-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const started = await startRepro(input(cwd, fakeProvider(sandbox)));
+      const provider: SandboxProvider = {
+        createSandbox: async () => sandbox,
+        resumeSandbox: async () => { throw new Error("404 sandbox not found"); },
+      };
+
+      let caught: unknown;
+      try {
+        await execRepro({
+          cwd,
+          runId: started.runId,
+          command: "probe",
+          expectations: { exitCode: 0 },
+          sandboxProvider: provider,
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(SandboxUnavailableError);
+      expect((await readRun(cwd, started.runId)).status).toBe("aborted");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -114,6 +168,43 @@ describe("agent-driven repro lifecycle", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("installs dependencies before launching services and runs baseline after readiness", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-service-order-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: [install-deps]\nbaseline: [run-baseline]\nservices:\n  - name: web\n    start: run-server\n    ready: server-ready\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const started = await startRepro(input(cwd, fakeProvider(sandbox)));
+
+      expect(started.status).toBe("environment_ready");
+      const commands = sandbox.invocations.map((invocation) => invocation.command);
+      const setupIndex = commands.indexOf("install-deps");
+      const startIndex = commands.findIndex((command) => command.includes("nohup sh -c 'run-server'"));
+      const readyIndex = commands.indexOf("server-ready");
+      const baselineIndex = commands.indexOf("run-baseline");
+      expect(setupIndex).toBeGreaterThan(-1);
+      expect(startIndex).toBeGreaterThan(setupIndex);
+      expect(readyIndex).toBeGreaterThan(startIndex);
+      expect(baselineIndex).toBeGreaterThan(readyIndex);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("persists failed service readiness evidence", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-service-failure-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\ncommandTimeoutSeconds: 1\nservices:\n  - name: web\n    start: run-server\n    ready: never-ready\n", "utf8");
+      const report = await startRepro(input(cwd, fakeProvider(new FailingServiceReadySandbox())));
+
+      expect(report.status).toBe("setup_failed");
+      expect(report.failure).toContain("Service web did not become ready");
+      expect(report.commands.at(-1)).toMatchObject({ name: "service_ready", status: "failed", stderr: "connection refused" });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("uses and persists repository configuration before sandbox creation", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-remote-config-"));
     try {
@@ -515,6 +606,16 @@ class FailingStopSandbox extends FakeSandbox {
     if (command === "stop-service") {
       this.invocations.push({ command, cwd });
       throw new Error("stop failed");
+    }
+    return super.run(command, cwd);
+  }
+}
+
+class FailingServiceReadySandbox extends FakeSandbox {
+  override async run(command: string, cwd?: string): Promise<SandboxExecResult> {
+    if (command === "never-ready") {
+      this.invocations.push({ command, cwd });
+      return { exitCode: 1, stdout: "", stderr: "connection refused", timedOut: false };
     }
     return super.run(command, cwd);
   }

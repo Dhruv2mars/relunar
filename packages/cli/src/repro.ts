@@ -4,7 +4,7 @@ import { collectArtifacts } from "./artifacts";
 import { parseRelunarConfig, defaultRelunarConfig, resolveAutoStopMinutes } from "./config";
 import { assertEvidenceGates } from "./evidence";
 import { detectSandboxImage } from "./detection";
-import { prepareTerminalEnvironment, resolveCommandEnv, resolveWorkdir } from "./environment";
+import { prepareTerminalEnvironment, resolveCommandEnv, resolveWorkdir, startTerminalServices } from "./environment";
 import { executeProbe } from "./probe";
 import { redactSecret, withAgentNextStep } from "./reports";
 import { createRunId, readRun, runStoreDir, withRunLock, writeRun } from "./runs";
@@ -21,6 +21,14 @@ export type ReproInput = {
   hostEnv?: NodeJS.ProcessEnv | undefined;
   repositoryConfig?: RelunarConfig | null | undefined;
 };
+
+export class SandboxUnavailableError extends Error {
+  override readonly name = "SandboxUnavailableError";
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
 
 export async function runRepro(input: ReproInput): Promise<RunReport> {
   return runInitialRepro(input, true);
@@ -120,6 +128,18 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
       if (lastFailed(commands)) {
         return await finish(input, startedAt, runId, "setup_failed", commands, commit, sandbox, `${command} failed`, config, environment, sandboxImage);
       }
+    }
+
+    const services = await startTerminalServices({
+      sandbox,
+      config,
+      commandEnv,
+      workdir,
+      timeoutSeconds: commandTimeoutSeconds,
+    });
+    commands.push(...services.commands);
+    if (services.failure) {
+      return await finish(input, startedAt, runId, "setup_failed", commands, commit, sandbox, services.failure, config, environment, sandboxImage);
     }
 
     for (const command of config.baseline) {
@@ -470,15 +490,22 @@ async function resumeAndTouch(
     }
     return sandbox;
   } catch (error) {
-    // Mark the run inactive so oneshot resume does not keep selecting a dead sandbox.
+    if (!isMissingSandboxError(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    // Mark only definitively missing sandboxes inactive; transient provider failures remain retryable.
     if (report.status === "environment_ready") {
       report.status = "aborted";
-      report.failure = error instanceof Error ? error.message : String(error);
+      report.failure = message;
       report.finishedAt = new Date().toISOString();
       await persistRun(cwd, report, config.report.maxLogLines);
     }
-    throw error;
+    throw new SandboxUnavailableError(message, { cause: error });
   }
+}
+
+function isMissingSandboxError(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  return /(?:^|\b)(?:404|not found|deleted|disposed|does not exist)(?:\b|$)/i.test(message);
 }
 
 async function recordSync(

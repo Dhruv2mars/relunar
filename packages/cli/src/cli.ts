@@ -43,6 +43,7 @@ import {
   cleanupRepro,
   execRepro,
   finishRepro,
+  SandboxUnavailableError,
   startRepro,
   syncRepro,
   uploadReproFile,
@@ -590,7 +591,7 @@ async function repro(
       });
     } catch (error) {
       // Active run pointed at a disposed/missing sandbox — start a fresh lifecycle once.
-      if (!active) {
+      if (!active || !(error instanceof SandboxUnavailableError)) {
         throw error;
       }
       const issue = await client.getIssueContext(repo, issueNumber);

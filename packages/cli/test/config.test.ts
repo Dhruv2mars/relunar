@@ -356,4 +356,16 @@ describe("relunar config", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("reclaims a partial legacy global config lock", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-config-partial-lock-"));
+    try {
+      const path = join(dir, "config.json");
+      await Bun.write(`${path}.lock`, "invalid");
+      await linkRepo(join(dir, "repo"), "owner/repo", path);
+      expect((await readGlobalConfig(path)).repoLinks).toHaveProperty(join(dir, "repo"));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });

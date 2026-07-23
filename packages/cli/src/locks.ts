@@ -1,4 +1,22 @@
-import { open, readFile, unlink } from "node:fs/promises";
+import { link, open, readFile, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+
+/** Atomically publishes a complete owner record without exposing a partial lock file. */
+export async function tryCreateOwnedLock(path: string): Promise<boolean> {
+  const temp = `${path}.owner-${process.pid}-${randomUUID()}`;
+  try {
+    await writeFile(temp, `${process.pid} ${new Date().toISOString()}\n`, { encoding: "utf8", flag: "wx" });
+    try {
+      await link(temp, path);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
+      throw error;
+    }
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
+}
 
 /** A lock is reclaimable only when its recorded owner no longer exists. */
 export async function lockOwnerIsDead(path: string): Promise<boolean> {
@@ -6,7 +24,7 @@ export async function lockOwnerIsDead(path: string): Promise<boolean> {
     const [pidText, timestamp] = (await readFile(path, "utf8")).trim().split(/\s+/, 2);
     const pid = Number(pidText);
     const recordedAt = Date.parse(timestamp ?? "");
-    if (!Number.isInteger(pid) || pid <= 0 || !Number.isFinite(recordedAt)) return false;
+    if (!Number.isInteger(pid) || pid <= 0 || !Number.isFinite(recordedAt)) return true;
     try {
       process.kill(pid, 0);
       return false;

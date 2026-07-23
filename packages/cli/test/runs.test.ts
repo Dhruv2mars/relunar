@@ -71,6 +71,18 @@ describe("durable run store", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("reclaims a partial legacy run lock", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-runs-partial-lock-"));
+    try {
+      await writeRun(cwd, report(), 40);
+      await writeFile(join(cwd, ".relunar", "runs", "issue-1-test", "run.lock"), "");
+      await updateRun(cwd, "issue-1-test", 40, (current) => ({ ...current, summary: "updated" }));
+      expect((await readRun(cwd, "issue-1-test")).summary).toBe("updated");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
 
 function report(): RunReport {
