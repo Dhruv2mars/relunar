@@ -27,7 +27,9 @@ export async function collectArtifacts(input: {
   const matches = input.patterns
     .map((pattern) => `-path ${shellQuote(`./${pattern}`)}`)
     .join(" -o ");
-  const command = `find . -type f \\( ${matches} \\) -print0 | tar --null -T - -czf ${shellQuote(remotePath)}`;
+  const find = `find . -type f \\( ${matches} \\)`;
+  const archive = shellQuote(remotePath);
+  const command = `if tar --help 2>&1 | grep -q -- '--null'; then ${find} -print0 | tar --null -T - -czf ${archive}; else ${find} -print | tar -T - -czf ${archive}; fi`;
   const archived = await input.sandbox.run(command, "repo", input.timeoutSeconds);
   if (archived.exitCode !== 0) {
     throw new Error(`Artifact collection failed: ${archived.stderr || archived.stdout || "tar failed"}`);
