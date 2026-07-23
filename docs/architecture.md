@@ -8,6 +8,11 @@ packages/cli
   src/github.ts       GitHub REST adapter
   src/daytona.ts      Daytona SDK adapter
   src/repro.ts        deterministic repro orchestration
+  src/probe.ts        machine assertions, repeats, resets, and controls
+  src/environment.ts  workspace, env, services, and runtime fingerprint
+  src/artifacts.ts    deterministic artifact archive/download
+  src/publication.ts  idempotent comment preview/retry
+  src/recovery.ts     orphan sandbox inspection and garbage collection
   src/runs.ts         local run store
   src/reports.ts      markdown/json report rendering
   src/config.ts       .relunar.yml and global config
@@ -47,14 +52,15 @@ relunar repro sync <run-id> [--include-untracked]
   -> resume sandbox, refresh idle TTL, sync dirty local worktree into repo/
 relunar repro upload <run-id> <local-path> <remote-path>
   -> resume sandbox and upload repro input
-relunar repro exec <run-id> [--sync] -- <command>
-  -> resume sandbox, optionally sync worktree, append issue-specific command evidence
+relunar repro exec <run-id> [--sync] [assertions] -- <command>
+  -> resume sandbox, optionally sync worktree, evaluate and append machine-checked evidence
 relunar repro finish <run-id> --outcome <outcome> --summary <text> [--comment]
-  -> enforce evidence gates (reproduced requires probe output by default)
+  -> enforce assertions, repeatability, controls, and complete narrative
   -> record reproduced, not_reproduced, or blocked outcome
+  -> collect configured artifacts
   -> write report.json, report.md, logs.txt
-  -> optionally post GitHub comment
-  -> cleanup sandbox
+  -> optionally post a verified GitHub comment idempotently
+  -> cleanup only after successful publication, or explicitly for preview-only runs
 ```
 
 Sandbox stays warm across probe iterations until finish/abort. Idle auto-stop defaults to 60 minutes (`sandbox.autoStopMinutes`) and is refreshed on each resume. Sync overlays present files and removes locally deleted tracked paths.

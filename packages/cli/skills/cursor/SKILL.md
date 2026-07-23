@@ -25,7 +25,7 @@ Command details live in [`reference.md`](reference.md) and `relunar <cmd> --help
 |------|--------|
 | **Relunar** | The CLI harness — sandboxes, logs, reports, optional GitHub comments |
 | **harness** | Deterministic plumbing; you supply judgment |
-| **Evidence** | Issue-specific probe output that supports an outcome (setup/baseline alone is not Evidence) |
+| **Evidence** | Issue-specific probe plus explicit machine assertions; output alone is not verified proof |
 | **Finish narrative** | Maintainer-useful `--summary` / `--repro-steps` / `--observed` / `--expected` / `--environment` |
 
 `environment_ready` ≠ reproduced. Always probe.
@@ -55,9 +55,9 @@ relunar issues list --state open --limit 20 --json
 For each issue number `N`:
 
 1. **Start** — `relunar repro start N` (or one-shot `relunar repro N -- <probe>`). Sandbox ready ≠ Evidence.
-2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload`), then `repro exec` / one-shot probes until you have issue-specific Evidence (or a clear block).
+2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload`), then run issue-specific probes with at least one assertion such as `--expect-exit`, `--output-match`, or `--file-exists`. Use `--repeat` for flaky claims and a control command when causal isolation matters.
 3. **Inspect** — `relunar runs show <run-id> --json` when deciding the outcome.
-4. **Finish** — exactly one outcome: `reproduced` | `not-reproduced` | `blocked`. Finish rejects soft claims (e.g. a passing empty probe for `reproduced`).
+4. **Finish** — exactly one outcome: `reproduced` | `not-reproduced` | `blocked`. `reproduced` and `not-reproduced` require machine-checked Evidence. Never use `--skip-evidence-gates` for a publishable result.
 
 ```sh
 relunar repro finish <run-id> \
@@ -70,7 +70,7 @@ relunar repro finish <run-id> \
   --comment   # only when posting to GitHub
 ```
 
-**Done when (per issue):** `repro finish` succeeded with an outcome **and** a Finish narrative whose `--summary` a maintainer can act on; when commenting, `--repro-steps` / `--observed` / `--expected` / `--environment` are filled from Evidence (not harness dumps). Abort only if the run must be discarded — then start a fresh lifecycle for that issue.
+**Done when (per issue):** `repro finish` succeeded with an outcome and all four narrative fields filled from Evidence. Preview with `relunar repro comment preview <run-id>`. Post only when requested; retry safely with `relunar repro comment post <run-id>`. Run `relunar repro cleanup <run-id>` after a preview-only finish or a successful retry.
 
 ### 4. Report back
 

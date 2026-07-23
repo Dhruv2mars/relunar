@@ -235,6 +235,28 @@ describe("agent-driven repro lifecycle", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("skip gates remains unverified and therefore cannot become publishable evidence", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-skipped-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline:\n  - bun run build\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const provider = fakeProvider(sandbox);
+      const started = await startRepro(input(cwd, provider));
+      const finished = await finishRepro({
+        cwd,
+        runId: started.runId,
+        outcome: "blocked",
+        summary: "External service unavailable.",
+        skipEvidenceGates: true,
+        sandboxProvider: provider,
+      });
+
+      expect(finished.trust).toBe("unverified");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
 
 function input(cwd: string, sandboxProvider: SandboxProvider) {

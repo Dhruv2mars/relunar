@@ -103,6 +103,20 @@ describe("assertion-driven probes", () => {
     expect(evidence[0]?.verification?.passed).toBe(true);
     expect(sandbox.commands).toEqual(["run-control", "run-bug-case", "reset-fixture", "run-bug-case"]);
   });
+
+  test("records a Daytona-style timeout as a failed assertion without losing evidence", async () => {
+    const sandbox = new ProbeSandbox([{ exitCode: null, stdout: "partial output", stderr: "", timedOut: true }]);
+    const [evidence] = await executeProbe({
+      sandbox,
+      command: "hung-test",
+      cwd: "repo",
+      timeoutSeconds: 1,
+      expectations: { exitCode: 0 },
+    });
+
+    expect(evidence).toMatchObject({ status: "timed_out", exitCode: null, stdout: "partial output" });
+    expect(evidence?.verification).toMatchObject({ verified: true, passed: false });
+  });
 });
 
 class ProbeSandbox implements SandboxSession {

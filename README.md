@@ -43,8 +43,8 @@ relunar doctor
 relunar issues list --state open --limit 20 --json
 relunar repro start 123
 relunar repro upload <run-id> ./repro.ts repo/repro.ts
-relunar repro exec <run-id> -- bun repro.ts
-relunar repro finish <run-id> --outcome reproduced --summary "Observed compiler crash." --comment
+relunar repro exec <run-id> --expect-exit 1 --stderr-match "compiler crash" -- bun repro.ts
+relunar repro finish <run-id> --outcome reproduced --summary "Compiler crashes on the supplied input." --repro-steps "1. Run bun repro.ts" --observed "Compiler exits 1 with compiler crash." --expected "Compilation succeeds." --environment "Node 22" --comment
 ```
 
 ## Repository Config
@@ -70,13 +70,34 @@ sandbox:
     memory: 8
     disk: 10
 
+workspace:
+  workdir: repo
+  submodules: false
+  lfs: false
+
+environment:
+  variables:
+    CI: "true"
+  passthrough:
+    - TEST_API_TOKEN
+
+services:
+  - name: app
+    start: bun run dev
+    ready: curl -fsS http://127.0.0.1:3000/health
+    stop: pkill -f "bun run dev"
+
+artifacts:
+  collect:
+    - test-results/**
+
 commandTimeoutSeconds: 300
 
 report:
   maxLogLines: 200
 ```
 
-`repro start` clones the linked GitHub repo into a persistent Daytona sandbox, reads `.relunar.yml`, runs `setup`, then runs `baseline`. Agents use `repro upload` and `repro exec` for issue-specific investigation. `repro finish` requires command evidence and a summary, records the outcome, optionally comments, then deletes the sandbox. Use `sandbox.image` when the repository requires a different runtime than Daytona's default language image. `sandbox.resources` requires a custom image and controls CPU cores, memory GiB, and disk GiB. Increase `commandTimeoutSeconds` for large repositories with long install or test commands. Reports are written locally:
+`repro start` clones the linked GitHub repo into a persistent Daytona sandbox, prepares the configured workspace, services, environment, setup, and baseline. Agents then run probes with explicit exit/output/file/duration assertions. Conclusive outcomes require every repeated probe and optional control to satisfy its assertions. `repro finish` records a complete maintainer narrative and verified trust; comment publication is explicit, previewable, retryable, and idempotent. Configured artifacts are downloaded before cleanup. Use `relunar sandboxes list` and dry-run `relunar sandboxes gc` to recover leaked resources.
 
 ```txt
 .relunar/runs/<run-id>/
@@ -123,8 +144,13 @@ relunar repro exec <run-id> -- <command>
 relunar repro upload <run-id> <local-path> <remote-path>
 relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--comment]
 relunar repro abort <run-id>
+relunar repro comment preview <run-id>
+relunar repro comment post <run-id>
+relunar repro cleanup <run-id>
 relunar runs list
 relunar runs show <run-id>
+relunar sandboxes list
+relunar sandboxes gc [--confirm]
 relunar skills list
 relunar skills get codex
 relunar skills install codex
