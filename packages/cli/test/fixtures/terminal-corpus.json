@@ -217,6 +217,13 @@
     "expectedOutcome": "reproduced"
   },
   {
+    "repo": "Dhruv2mars/service-monorepo-relunar-testbed",
+    "issue": 1,
+    "ecosystem": "javascript",
+    "kind": "bug",
+    "expectedOutcome": "reproduced"
+  },
+  {
     "repo": "bats-core/bats-core",
     "issue": 1219,
     "ecosystem": "shell",
