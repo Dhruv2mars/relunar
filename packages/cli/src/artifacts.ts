@@ -24,7 +24,10 @@ export async function collectArtifacts(input: {
 
   const name = "artifacts.tar.gz";
   const remotePath = `/tmp/relunar-${input.runId}-artifacts.tar.gz`;
-  const command = `tar -czf '${remotePath}' -- ${input.patterns.join(" ")}`;
+  const matches = input.patterns
+    .map((pattern) => `-path ${shellQuote(`./${pattern}`)}`)
+    .join(" -o ");
+  const command = `find . -type f \\( ${matches} \\) -print0 | tar --null -T - -czf ${shellQuote(remotePath)}`;
   const archived = await input.sandbox.run(command, "repo", input.timeoutSeconds);
   if (archived.exitCode !== 0) {
     throw new Error(`Artifact collection failed: ${archived.stderr || archived.stdout || "tar failed"}`);
@@ -49,4 +52,8 @@ export async function collectArtifacts(input: {
     sizeBytes: metadata.size,
     sha256: hash.digest("hex"),
   }];
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
 }

@@ -26,6 +26,8 @@ describe("artifact collection", () => {
       });
       expect(artifacts[0]?.sha256).toHaveLength(64);
       expect(sandbox.commands[0]).toContain("logs/**");
+      expect(sandbox.commands[0]).toContain("find . -type f");
+      expect(sandbox.commands[0]).toContain("-print0 | tar --null -T -");
       expect(sandbox.downloads).toHaveLength(1);
     } finally {
       await rm(cwd, { recursive: true, force: true });
