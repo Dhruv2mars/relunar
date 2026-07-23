@@ -113,6 +113,7 @@ describe("release contract", () => {
   });
 
   test("release tag script prints package version tag", () => {
+    const rootPackageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
     const packageJson = JSON.parse(readFileSync(join(repoRoot, "packages", "cli", "package.json"), "utf8"));
     const output = execFileSync("node", ["scripts/release-tag.mjs", "--print"], {
       cwd: repoRoot,
@@ -120,6 +121,11 @@ describe("release contract", () => {
     }).trim();
 
     expect(output).toBe(`v${packageJson.version}`);
+    expect(rootPackageJson.scripts["release:tag"]).toContain("--print");
+    expect(rootPackageJson.scripts["release:tag:push"]).toContain("--push");
+    const script = readFileSync(join(repoRoot, "scripts", "release-tag.mjs"), "utf8");
+    expect(script).toContain('branch !== "main"');
+    expect(script).toContain('head !== remoteMain');
   });
 });
 
