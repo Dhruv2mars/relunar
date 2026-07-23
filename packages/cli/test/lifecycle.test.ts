@@ -225,6 +225,27 @@ describe("agent-driven repro lifecycle", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  test("records the commit selected by workspace checkout", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-checkout-commit-"));
+    try {
+      const sandbox = new CheckoutSandbox();
+      const report = await startRepro({
+        ...input(cwd, fakeProvider(sandbox)),
+        repositoryConfig: parseRelunarConfig("version: 1\nsetup: []\nbaseline: []\nworkspace:\n  checkout: refs/tags/v2.0.0\n"),
+      });
+
+      expect(report.status).toBe("environment_ready");
+      expect(report.commit).toBe("checked-out-sha");
+      expect(report.commands).toContainEqual(expect.objectContaining({
+        name: "workspace",
+        command: "git fetch origin 'refs/tags/v2.0.0' && git checkout --detach FETCH_HEAD",
+        status: "passed",
+      }));
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
   test("keeps ready sandbox, records issue evidence, then finalizes and cleans up", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-"));
     try {
@@ -617,6 +638,19 @@ class FailingServiceReadySandbox extends FakeSandbox {
       this.invocations.push({ command, cwd });
       return { exitCode: 1, stdout: "", stderr: "connection refused", timedOut: false };
     }
+    return super.run(command, cwd);
+  }
+}
+
+class CheckoutSandbox extends FakeSandbox {
+  private checkedOut = false;
+
+  override async run(command: string, cwd?: string): Promise<SandboxExecResult> {
+    if (command.includes("git checkout --detach FETCH_HEAD")) {
+      this.checkedOut = true;
+      return super.run(command, cwd);
+    }
+    if (command.includes("git rev-parse")) return ok(this.checkedOut ? "checked-out-sha\n" : "clone-sha\n");
     return super.run(command, cwd);
   }
 }

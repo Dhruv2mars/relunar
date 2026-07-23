@@ -111,6 +111,8 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
       .filter((value): value is string => Boolean(value));
     environment = prepared.fingerprint;
     commands.push(...prepared.commands);
+    const preparedCommit = await sandbox.run("git rev-parse HEAD", "repo", commandTimeoutSeconds);
+    commit = preparedCommit.exitCode === 0 ? preparedCommit.stdout.trim() : commit;
 
     for (const command of config.setup) {
       commands.push(
