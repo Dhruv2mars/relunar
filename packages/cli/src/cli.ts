@@ -66,6 +66,7 @@ import type {
   RunReport,
 } from "./types";
 import type { SecretName } from "./credentials";
+import packageJson from "../package.json" with { type: "json" };
 
 export type CliIO = {
   stdout(message: string): void;
@@ -88,6 +89,11 @@ export async function runCli(argv: string[], deps: CliDeps): Promise<number> {
   const [command, subcommand, third] = positionals;
 
   try {
+    if (flagBoolean(flags, "version") || command === "version") {
+      deps.io.stdout(`${packageJson.version}\n`);
+      return 0;
+    }
+
     if (flagBoolean(flags, "help")) {
       deps.io.stdout(contextualHelp(positionals));
       return 0;

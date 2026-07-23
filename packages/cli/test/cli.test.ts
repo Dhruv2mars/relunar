@@ -38,6 +38,14 @@ describe("cli", () => {
     expect(output.stdout).not.toContain("Setup complete. Useful next commands");
   });
 
+  test("prints the packaged version without requiring setup", async () => {
+    const flag = await invoke(["--version"]);
+    expect(flag).toEqual({ code: 0, stdout: "0.3.0\n", stderr: "" });
+
+    const command = await invoke(["version"]);
+    expect(command).toEqual({ code: 0, stdout: "0.3.0\n", stderr: "" });
+  });
+
   test("prints focused help for repro lifecycle subcommands", async () => {
     const exec = await invoke(["repro", "exec", "--help"]);
     expect(exec.code).toBe(0);
