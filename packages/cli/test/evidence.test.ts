@@ -171,7 +171,47 @@ describe("evidence gates", () => {
     }));
     await expect(assertEvidenceGates(baseReport(commands), "reproduced", defaultRelunarConfig)).rejects.toThrow("all 3 repeated probe assertions");
   });
+
+  test("evaluates only explicitly selected claim-linked evidence", async () => {
+    const report = baseReport([
+      verifiedProbe("probe-1", "Issue crashes on empty config", true, "TypeError: empty config"),
+      verifiedProbe("probe-2", "Generic environment diagnostic", true, "PROBE_COMPLETE"),
+    ]);
+
+    await assertEvidenceGates(report, "reproduced", defaultRelunarConfig, { evidenceIds: ["probe-1"] });
+    await expect(
+      assertEvidenceGates(report, "reproduced", defaultRelunarConfig, { evidenceIds: ["missing"] }),
+    ).rejects.toThrow("selected evidence was not found");
+  });
+
+  test("rejects reproduced evidence without an issue-behavior claim", async () => {
+    const command = verifiedProbe("probe-1", "", true, "signal");
+    await expect(
+      assertEvidenceGates(baseReport([command]), "reproduced", defaultRelunarConfig, { evidenceIds: ["probe-1"] }),
+    ).rejects.toThrow("issue-behavior claim");
+  });
 });
+
+function verifiedProbe(evidenceId: string, claim: string, passed: boolean, stdout: string): RunReport["commands"][number] {
+  return {
+    name: "repro",
+    evidenceId,
+    claim,
+    command: "probe",
+    status: "passed",
+    exitCode: 0,
+    durationMs: 1,
+    stdout,
+    stderr: "",
+    verification: {
+      verified: true,
+      passed,
+      attempt: 1,
+      totalAttempts: 1,
+      checks: [{ kind: "output_matches", expected: "/signal/", actual: stdout, passed }],
+    },
+  };
+}
 
 function baseReport(commands: RunReport["commands"], verified = false): RunReport {
   return {

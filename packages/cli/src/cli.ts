@@ -407,11 +407,13 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
     }
 
     if (wantFinish) {
+      const createdEvidenceId = [...report.commands].reverse().find((command) => command.name === "repro")?.evidenceId;
       report = await finishRepro({
         cwd: deps.cwd,
         runId: report.runId,
         outcome: outcome!,
         ...narrative!,
+        evidenceIds: createdEvidenceId ? [createdEvidenceId] : narrative!.evidenceIds,
         sandboxProvider: provider,
         skipEvidenceGates: flagBoolean(flags, "skip-evidence-gates"),
       });
@@ -461,7 +463,7 @@ async function repro(args: string[], flags: Record<string, string | boolean>, pa
   } else if (action === "finish") {
     const outcome = parseOutcome(flagString(flags, "outcome"));
     const narrative = parseFinishNarrative(flags);
-    if (!args[1] || !outcome || !narrative) {
+    if (!args[1] || !outcome || !narrative || (outcome !== "blocked" && !narrative.evidenceIds?.length)) {
       deps.io.stderr(
         "Usage: relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] [--comment] [--skip-evidence-gates]\n",
       );
@@ -520,6 +522,7 @@ function parseFinishNarrative(flags: Record<string, string | boolean>): {
   observed?: string;
   expected?: string;
   environmentNotes?: string;
+  evidenceIds?: string[];
 } | null {
   const summary = flagString(flags, "summary")?.trim();
   if (!summary) {
@@ -531,15 +534,18 @@ function parseFinishNarrative(flags: Record<string, string | boolean>): {
     observed?: string;
     expected?: string;
     environmentNotes?: string;
+    evidenceIds?: string[];
   } = { summary };
   const reproSteps = flagString(flags, "repro-steps")?.trim();
   const observed = flagString(flags, "observed")?.trim();
   const expected = flagString(flags, "expected")?.trim();
   const environmentNotes = flagString(flags, "environment")?.trim();
+  const evidenceIds = flagString(flags, "evidence")?.split(",").map((value) => value.trim()).filter(Boolean);
   if (reproSteps) narrative.reproSteps = reproSteps;
   if (observed) narrative.observed = observed;
   if (expected) narrative.expected = expected;
   if (environmentNotes) narrative.environmentNotes = environmentNotes;
+  if (evidenceIds?.length) narrative.evidenceIds = evidenceIds;
   return narrative;
 }
 
@@ -552,8 +558,9 @@ function parseProbeOptions(flags: Record<string, string | boolean>): {
   repeat?: number;
   resetCommand?: string;
   control?: { command: string; expectations: ProbeExpectations };
+  claim?: string;
 } {
-  const valueFlags = ["expect-exit", "stdout-match", "stderr-match", "output-match", "file-exists", "max-duration-ms", "repeat", "reset-command", "control-command", "control-expect-exit", "control-output-match"];
+  const valueFlags = ["claim", "expect-exit", "stdout-match", "stderr-match", "output-match", "file-exists", "max-duration-ms", "repeat", "reset-command", "control-command", "control-expect-exit", "control-output-match"];
   for (const name of valueFlags) {
     if (flagNeedsValue(flags, name)) throw new Error(`Missing value for --${name}.`);
   }
@@ -585,6 +592,10 @@ function parseProbeOptions(flags: Record<string, string | boolean>): {
     controlExpectations.exitCode = Number.parseInt(controlExit, 10);
   }
   const controlOutput = flagString(flags, "control-output-match")?.trim();
+  const claim = flagString(flags, "claim")?.trim();
+  if (Object.keys(expectations).length > 0 && !claim) {
+    throw new Error("Machine-asserted probes require --claim describing the issue behavior being tested.");
+  }
   if (controlOutput) controlExpectations.outputMatches = controlOutput;
   if ((controlExit !== undefined || controlOutput) && !controlCommand) throw new Error("Control expectations require --control-command.");
   if (controlCommand && Object.keys(controlExpectations).length === 0) throw new Error("--control-command requires --control-expect-exit or --control-output-match.");
@@ -593,6 +604,7 @@ function parseProbeOptions(flags: Record<string, string | boolean>): {
     ...(repeat !== undefined ? { repeat } : {}),
     ...(resetCommand ? { resetCommand } : {}),
     ...(controlCommand ? { control: { command: controlCommand, expectations: controlExpectations } } : {}),
+    ...(claim ? { claim } : {}),
   };
 }
 
@@ -742,16 +754,16 @@ Agent workflow:
   1. relunar doctor [--json]
   2. relunar issues list --state open --limit 20 --json
   3. One-shot probe (start or resume, run probe, leave sandbox warm):
-       relunar repro <issue-number> [--sync] -- <probe-command>
+       relunar repro <issue-number> --claim <issue-behavior> [--sync] -- <probe-command>
      Or multi-step:
        relunar repro start <issue-number>
        relunar repro sync <run-id> [--include-untracked]
        relunar repro upload <run-id> <local-path> <remote-path>
-       relunar repro exec <run-id> [--sync] -- <command>
+       relunar repro exec <run-id> --claim <issue-behavior> [--sync] -- <command>
   4. Agent judges outcome from probe evidence, then finishes with narrative fields
      (Relunar formats the comment; it does not invent repro steps):
        relunar repro finish <run-id> --outcome reproduced|not-reproduced|blocked \\
-         --summary <text> [--repro-steps <text>] [--observed <text>] \\
+         --evidence probe-N --summary <text> [--repro-steps <text>] [--observed <text>] \\
          [--expected <text>] [--environment <text>] [--comment]
 
   Sandbox stays warm until finish/abort. Idle auto-stop defaults to 60m (sandbox.autoStopMinutes).

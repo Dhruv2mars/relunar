@@ -36,18 +36,19 @@ relunar doctor --json
 relunar issues list --state open --limit 20 --json
 
 # One-shot: start (or resume an active run), run a probe, leave sandbox warm
-relunar repro 123 --expect-exit 1 --stderr-match "crash" -- bun test path/to/repro.ts
+relunar repro 123 --claim "Issue crashes on the supplied fixture" --expect-exit 1 --stderr-match "crash" -- bun test path/to/repro.ts
 
 # Or multi-step lifecycle
 relunar repro start 123
 relunar repro upload <run-id> ./repro.ts repo/repro.ts
-relunar repro exec <run-id> --expect-exit 1 --stderr-match "Error: boom" --repeat 3 -- bun repro.ts
+relunar repro exec <run-id> --claim "Empty config crashes with Error: boom" --expect-exit 1 --stderr-match "Error: boom" --repeat 3 -- bun repro.ts
 relunar runs show <run-id> --json
 
 # Agent judges outcome from probe evidence (environment_ready ≠ reproduced)
 # Supply narrative fields for maintainer-useful comments — Relunar formats, does not invent steps
 relunar repro finish <run-id> \
   --outcome reproduced \
+  --evidence probe-1 \
   --summary "Observed issue behavior." \
   --repro-steps "1. …" \
   --observed "key stderr…" \

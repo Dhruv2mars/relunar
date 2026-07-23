@@ -21,6 +21,8 @@ describe("assertion-driven probes", () => {
         stderrMatches: "TypeError: empty config",
         filesExist: ["repo/artifacts/trace.log"],
       },
+      evidenceId: "probe-1",
+      claim: "Empty config crashes with TypeError",
     });
 
     expect(evidence).toHaveLength(3);
@@ -31,6 +33,8 @@ describe("assertion-driven probes", () => {
       attempt: 3,
       totalAttempts: 3,
     });
+    expect(evidence.every((attempt) => attempt.evidenceId === "probe-1")).toBe(true);
+    expect(evidence.every((attempt) => attempt.claim === "Empty config crashes with TypeError")).toBe(true);
     expect(sandbox.commands.filter((command) => command === "bun repro.ts")).toHaveLength(3);
   });
 

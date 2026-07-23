@@ -132,6 +132,10 @@ export type ProbeVerification = {
 
 export type CommandEvidence = {
   name: string;
+  /** Stable identifier shared by a probe series and its control. */
+  evidenceId?: string | undefined;
+  /** Agent-authored, issue-specific behavior this evidence evaluates. */
+  claim?: string | undefined;
   command: string;
   status: CommandStatus;
   exitCode: number | null;
@@ -185,6 +189,8 @@ export type RunReport = {
   environmentNotes?: string | null | undefined;
   /** Trust derives from machine-evaluated probe assertions. */
   trust?: "verified" | "unverified" | undefined;
+  /** Evidence groups explicitly selected to support the final verdict. */
+  selectedEvidenceIds?: string[] | undefined;
   publication?: {
     status: "pending" | "posted" | "failed";
     attempts: number;

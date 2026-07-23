@@ -93,9 +93,9 @@ export function agentNextStep(report: RunReport): string {
   switch (report.status) {
     case "environment_ready":
       if (hasIssueProbeEvidence(report)) {
-        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --summary <text>\` (optional: --repro-steps, --observed, --expected, --environment).`;
+        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} --claim <issue-behavior> -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --evidence probe-N --summary <text>\` (optional: --repro-steps, --observed, --expected, --environment).`;
       }
-      return `Environment ready only — not reproduced. Read issue.body, plan probes, then \`relunar repro exec ${report.runId} -- <command>\` (or \`relunar repro ${report.issue.number} -- <command>\`). Finish only after probe evidence with --outcome and --summary.`;
+      return `Environment ready only — not reproduced. Read issue.body, plan probes, then \`relunar repro exec ${report.runId} --claim <issue-behavior> -- <command>\` (or \`relunar repro ${report.issue.number} --claim <issue-behavior> -- <command>\`). Finish only after selecting claim-linked evidence with --evidence.`;
     case "passed":
       return "Legacy dispose-on-ready run completed baseline only. Prefer `relunar repro start` and keep the sandbox warm for probes.";
     case "setup_failed":

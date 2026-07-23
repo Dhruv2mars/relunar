@@ -4,6 +4,7 @@ export type EvidenceGateOptions = {
   skip?: boolean | undefined;
   sandbox?: SandboxSession | undefined;
   timeoutSeconds?: number | undefined;
+  evidenceIds?: string[] | undefined;
 };
 
 /** Enforce outcome-scoped evidence gates before finish finalizes a run. */
@@ -18,8 +19,15 @@ export async function assertEvidenceGates(
   }
 
   const gate = resolveGate(outcome, config);
-  const reproCommands = report.commands.filter((command) => command.name === "repro");
-  const controlCommands = report.commands.filter((command) => command.name === "control");
+  const selectedIds = options.evidenceIds;
+  const selected = selectedIds?.length
+    ? report.commands.filter((command) => command.evidenceId && selectedIds.includes(command.evidenceId))
+    : report.commands;
+  if (selectedIds?.length && selectedIds.some((id) => !selected.some((command) => command.evidenceId === id))) {
+    throw new Error("Evidence gate failed: selected evidence was not found in this run.");
+  }
+  const reproCommands = selected.filter((command) => command.name === "repro");
+  const controlCommands = selected.filter((command) => command.name === "control");
 
   if (gate.requireReproCommand !== false && reproCommands.length === 0) {
     throw new Error("Cannot finish repro without issue-specific command evidence.");
@@ -28,6 +36,9 @@ export async function assertEvidenceGates(
   const verified = reproCommands.filter((command) => command.verification?.verified === true);
   const passed = verified.filter((command) => command.verification?.passed === true);
   if (outcome === "reproduced") {
+    if (selectedIds?.length && reproCommands.some((command) => !command.claim?.trim())) {
+      throw new Error("Evidence gate failed: reproduced evidence requires an issue-behavior claim.");
+    }
     if (controlCommands.some((command) => command.verification?.verified !== true || command.verification.passed !== true)) {
       throw new Error("Evidence gate failed: control assertion did not pass.");
     }

@@ -83,6 +83,7 @@ Use one or more assertions on every probe:
 
 ```sh
 relunar repro exec <run-id> \
+  --claim "Issue behavior being tested" \
   --expect-exit 1 \
   --stderr-match "panic|fatal" \
   --file-exists tmp/crash.log \
@@ -92,7 +93,7 @@ relunar repro exec <run-id> \
   -- <issue-specific-command>
 ```
 
-Available assertions are `--expect-exit`, `--stdout-match`, `--stderr-match`, `--output-match`, `--file-exists`, and `--max-duration-ms`. Every repeated attempt must pass. Add `--control-command` with `--control-expect-exit` or `--control-output-match` when the result needs a negative control.
+Available assertions are `--expect-exit`, `--stdout-match`, `--stderr-match`, `--output-match`, `--file-exists`, and `--max-duration-ms`. Asserted probes require `--claim` and return an evidence ID. Every repeated attempt must pass. Add `--control-command` with `--control-expect-exit` or `--control-output-match` when the result needs a negative control. Finish must select the issue-relevant evidence ID with `--evidence`.
 
 ## Repository environment
 

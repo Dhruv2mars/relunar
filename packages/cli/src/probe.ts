@@ -17,6 +17,8 @@ export type ExecuteProbeInput = {
   secrets?: string[] | undefined;
   resetCommand?: string | undefined;
   control?: { command: string; expectations: ProbeExpectations } | undefined;
+  evidenceId?: string | undefined;
+  claim?: string | undefined;
 };
 
 export async function executeProbe(input: ExecuteProbeInput): Promise<CommandEvidence[]> {
@@ -47,6 +49,8 @@ async function executeOne(
   totalAttempts: number,
 ): Promise<CommandEvidence> {
   const evidence = await executeUnverified(input, name, command);
+  if (input.evidenceId) evidence.evidenceId = input.evidenceId;
+  if (input.claim) evidence.claim = input.claim;
   const result: SandboxExecResult = {
     exitCode: evidence.exitCode,
     stdout: evidence.stdout,

@@ -159,6 +159,7 @@ export type ExecReproInput = {
   hostEnv?: NodeJS.ProcessEnv | undefined;
   resetCommand?: string | undefined;
   control?: { command: string; expectations: ProbeExpectations } | undefined;
+  claim?: string | undefined;
 };
 
 export async function execRepro(input: ExecReproInput): Promise<RunReport> {
@@ -179,6 +180,7 @@ export async function execRepro(input: ExecReproInput): Promise<RunReport> {
     }
   }
 
+  const evidenceId = nextEvidenceId(report);
   report.commands.push(
     ...(await executeProbe({
       sandbox,
@@ -191,6 +193,8 @@ export async function execRepro(input: ExecReproInput): Promise<RunReport> {
       secrets: Object.values(commandEnv),
       resetCommand: input.resetCommand,
       control: input.control,
+      evidenceId,
+      claim: input.claim?.trim(),
     })),
   );
   report.finishedAt = new Date().toISOString();
@@ -241,6 +245,7 @@ export type FinishNarrative = {
   observed?: string | undefined;
   expected?: string | undefined;
   environmentNotes?: string | undefined;
+  evidenceIds?: string[] | undefined;
 };
 
 export async function finishRepro(
@@ -260,10 +265,15 @@ export async function finishRepro(
   const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
 
+  if (input.outcome !== "blocked" && !input.evidenceIds?.length) {
+    throw new Error("A conclusive outcome requires explicit --evidence selection.");
+  }
+
   await assertEvidenceGates(report, input.outcome, config, {
     skip: input.skipEvidenceGates === true,
     sandbox,
     timeoutSeconds: config.commandTimeoutSeconds,
+    evidenceIds: input.evidenceIds,
   });
   if (
     input.outcome === "reproduced" &&
@@ -281,6 +291,7 @@ export async function finishRepro(
 
   report.status = input.outcome;
   report.trust = input.skipEvidenceGates === true || input.outcome === "blocked" ? "unverified" : "verified";
+  report.selectedEvidenceIds = input.evidenceIds;
   report.summary = summary;
   report.reproSteps = optionalText(input.reproSteps);
   report.observed = optionalText(input.observed);
@@ -294,6 +305,13 @@ export async function finishRepro(
   };
   report.finishedAt = new Date().toISOString();
   return await persistRun(input.cwd, report, config.report.maxLogLines);
+}
+
+function nextEvidenceId(report: RunReport): string {
+  const ids = new Set(report.commands.flatMap((command) => command.evidenceId ? [command.evidenceId] : []));
+  let index = ids.size + 1;
+  while (ids.has(`probe-${index}`)) index += 1;
+  return `probe-${index}`;
 }
 
 export async function cleanupRepro(input: {
