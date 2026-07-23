@@ -27,6 +27,10 @@ export async function detectSandboxImage(cwd: string): Promise<string | undefine
     return "mcr.microsoft.com/devcontainers/cpp:1-debian-12";
   }
 
+  if (await optionalRead(join(cwd, "pom.xml")) || await optionalRead(join(cwd, "gradlew"))) {
+    return "mcr.microsoft.com/devcontainers/java:1-21-bookworm";
+  }
+
   const packageJson = await optionalRead(join(cwd, "package.json"));
   if (packageJson) {
     try {

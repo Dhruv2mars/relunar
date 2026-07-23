@@ -246,6 +246,22 @@ async function detectInitConfig(cwd: string): Promise<RelunarConfig> {
       baseline: ["ctest --test-dir build --output-on-failure"],
     };
   }
+  if (await exists(join(cwd, "gradlew"))) {
+    return {
+      ...defaultRelunarConfig,
+      sandbox: { ...defaultRelunarConfig.sandbox, image: "mcr.microsoft.com/devcontainers/java:1-21-bookworm" },
+      setup: ["chmod +x ./gradlew && ./gradlew --no-daemon classes"],
+      baseline: ["./gradlew --no-daemon test"],
+    };
+  }
+  if (await exists(join(cwd, "pom.xml"))) {
+    return {
+      ...defaultRelunarConfig,
+      sandbox: { ...defaultRelunarConfig.sandbox, image: "mcr.microsoft.com/devcontainers/java:1-21-bookworm" },
+      setup: ["mvn -B -DskipTests package"],
+      baseline: ["mvn -B test"],
+    };
+  }
   if (await exists(join(cwd, "package-lock.json"))) {
     return { ...defaultRelunarConfig, setup: ["npm ci"], baseline: ["npm test"] };
   }

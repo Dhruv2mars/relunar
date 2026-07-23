@@ -63,4 +63,16 @@ describe("sandbox image detection", () => {
       }
     }
   });
+
+  test("detects Maven and Gradle Java projects", async () => {
+    for (const file of ["pom.xml", "gradlew"]) {
+      const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-java-"));
+      try {
+        await writeFile(join(cwd, file), "java project\n");
+        expect(await detectSandboxImage(cwd)).toBe("mcr.microsoft.com/devcontainers/java:1-21-bookworm");
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    }
+  });
 });

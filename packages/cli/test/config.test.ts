@@ -125,15 +125,21 @@ describe("relunar config", () => {
       const pythonDir = join(dir, "python");
       const autotoolsDir = join(dir, "autotools");
       const cmakeDir = join(dir, "cmake");
+      const mavenDir = join(dir, "maven");
+      const gradleDir = join(dir, "gradle");
       await Bun.write(join(goDir, "go.mod"), "module example.com/test\n\ngo 1.22\n");
       await Bun.write(join(pythonDir, "pyproject.toml"), "[project]\nname = 'sample'\nversion = '1.0.0'\n");
       await Bun.write(join(autotoolsDir, "configure.ac"), "AC_INIT([sample], [1.0])\n");
       await Bun.write(join(autotoolsDir, "vendor", "oniguruma", ".gitkeep"), "");
       await Bun.write(join(cmakeDir, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\n");
+      await Bun.write(join(mavenDir, "pom.xml"), "<project/>\n");
+      await Bun.write(join(gradleDir, "gradlew"), "#!/bin/sh\n");
       await writeRelunarConfig(join(goDir, ".relunar.yml"));
       await writeRelunarConfig(join(pythonDir, ".relunar.yml"));
       await writeRelunarConfig(join(autotoolsDir, ".relunar.yml"));
       await writeRelunarConfig(join(cmakeDir, ".relunar.yml"));
+      await writeRelunarConfig(join(mavenDir, ".relunar.yml"));
+      await writeRelunarConfig(join(gradleDir, ".relunar.yml"));
 
       expect(parseRelunarConfig(await readFile(join(goDir, ".relunar.yml"), "utf8"))).toMatchObject({
         setup: ["go mod download"],
@@ -152,6 +158,16 @@ describe("relunar config", () => {
         sandbox: { image: "mcr.microsoft.com/devcontainers/cpp:1-debian-12" },
         setup: expect.arrayContaining(["cmake -S . -B build -G Ninja", "cmake --build build -j2"]),
         baseline: ["ctest --test-dir build --output-on-failure"],
+      });
+      expect(parseRelunarConfig(await readFile(join(mavenDir, ".relunar.yml"), "utf8"))).toMatchObject({
+        sandbox: { image: "mcr.microsoft.com/devcontainers/java:1-21-bookworm" },
+        setup: ["mvn -B -DskipTests package"],
+        baseline: ["mvn -B test"],
+      });
+      expect(parseRelunarConfig(await readFile(join(gradleDir, ".relunar.yml"), "utf8"))).toMatchObject({
+        sandbox: { image: "mcr.microsoft.com/devcontainers/java:1-21-bookworm" },
+        setup: ["chmod +x ./gradlew && ./gradlew --no-daemon classes"],
+        baseline: ["./gradlew --no-daemon test"],
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
