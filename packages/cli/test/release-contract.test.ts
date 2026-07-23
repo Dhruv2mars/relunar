@@ -125,6 +125,7 @@ describe("release contract", () => {
     expect(rootPackageJson.scripts["release:tag:push"]).toContain("--push");
     const script = readFileSync(join(repoRoot, "scripts", "release-tag.mjs"), "utf8");
     expect(script).toContain('branch !== "main"');
+    expect(script).toContain('["fetch", "--quiet", "origin", "main"]');
     expect(script).toContain('head !== remoteMain');
   });
 });

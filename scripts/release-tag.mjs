@@ -16,8 +16,9 @@ if (branch !== "main") throw new Error(`Release tags may only be pushed from mai
 const status = execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim();
 if (status) throw new Error("Release tags require a clean worktree.");
 
+execFileSync("git", ["fetch", "--quiet", "origin", "main"], { stdio: "inherit" });
 const head = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-const remoteMain = execFileSync("git", ["rev-parse", "origin/main"], { encoding: "utf8" }).trim();
+const remoteMain = execFileSync("git", ["rev-parse", "FETCH_HEAD"], { encoding: "utf8" }).trim();
 if (head !== remoteMain) throw new Error("Release tags require HEAD to exactly match origin/main.");
 
 execFileSync("git", ["tag", tag], { stdio: "inherit" });
