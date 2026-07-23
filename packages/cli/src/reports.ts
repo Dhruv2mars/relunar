@@ -4,7 +4,10 @@ import type { CommandEvidence, RunReport } from "./types";
  * Maintainer-facing markdown for report.md and `--comment`.
  * Agent machinery (nextStep, full issue body, setup dumps, sandbox IDs) stays in report.json.
  */
-export function renderMarkdownReport(report: RunReport, maxLogLines: number): string {
+export function renderMarkdownReport(
+  report: RunReport,
+  maxLogLines: number,
+): string {
   const lines: string[] = [`## Repro: ${formatStatus(report.status)}`, ""];
 
   if (report.summary?.trim()) {
@@ -16,14 +19,25 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     lines.push(statusBlurb(report), "");
   }
 
-  const verifiedProbes = report.commands.filter((command) => command.verification?.verified);
+  const evidenceCommands = selectedEvidenceCommands(report);
+  const verifiedProbes = evidenceCommands.filter(
+    (command) => command.verification?.verified,
+  );
   if (report.trust) {
-    const passed = verifiedProbes.filter((command) => command.verification?.passed).length;
-    lines.push(`Verification: **${report.trust}**${verifiedProbes.length > 0 ? ` — ${passed}/${verifiedProbes.length} probe assertions matched` : ""}`, "");
-    const checks = verifiedProbes.at(-1)?.verification?.checks ?? [];
+    const checks = verifiedProbes.flatMap(
+      (command) => command.verification?.checks ?? [],
+    );
+    const passed = checks.filter((check) => check.passed).length;
+    lines.push(
+      `Verification: **${report.trust}**${checks.length > 0 ? ` — ${passed}/${checks.length} machine checks matched` : ""}`,
+      "",
+    );
     if (checks.length > 0) {
       lines.push("### Machine checks", "");
-      for (const check of checks) lines.push(`- \`${check.kind}\`: ${check.passed ? "passed" : "failed"} (expected ${inline(check.expected)})`);
+      for (const check of checks)
+        lines.push(
+          `- \`${check.kind}\`: ${check.passed ? "passed" : "failed"} (expected ${inline(check.expected)})`,
+        );
       lines.push("");
     }
   }
@@ -33,7 +47,8 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     lines.push("### Steps to reproduce", "", reproSteps, "");
   }
 
-  const observed = report.observed?.trim() || evidenceExcerpt(report.commands, maxLogLines);
+  const observed =
+    report.observed?.trim() || evidenceExcerpt(report.commands, maxLogLines);
   if (observed) {
     lines.push("### Observed", "", fenced(observed), "");
   }
@@ -44,7 +59,9 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
   }
 
   lines.push("### Environment", "");
-  lines.push(`- Repo: \`${report.repo}\`${report.commit ? ` @ \`${report.commit}\`` : ""}`);
+  lines.push(
+    `- Repo: \`${report.repo}\`${report.commit ? ` @ \`${report.commit}\`` : ""}`,
+  );
   const environmentNotes = report.environmentNotes?.trim();
   if (environmentNotes) {
     for (const note of environmentNotes.split("\n")) {
@@ -55,24 +72,45 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     }
   }
   if (report.environment) {
-    lines.push(`- Platform: ${report.environment.os} ${report.environment.architecture}`);
-    lines.push(`- Working directory: \`${report.environment.workingDirectory}\``);
-    for (const [runtime, version] of Object.entries(report.environment.runtimes)) {
+    lines.push(
+      `- Platform: ${report.environment.os} ${report.environment.architecture}`,
+    );
+    lines.push(
+      `- Working directory: \`${report.environment.workingDirectory}\``,
+    );
+    for (const [runtime, version] of Object.entries(
+      report.environment.runtimes,
+    )) {
       lines.push(`- Runtime \`${runtime}\`: ${version}`);
     }
-    if (report.environment.services.length > 0) lines.push(`- Services: ${report.environment.services.join(", ")}`);
+    if (report.environment.services.length > 0)
+      lines.push(`- Services: ${report.environment.services.join(", ")}`);
   }
   lines.push("");
 
   lines.push(`Artifacts: \`.relunar/runs/${report.runId}\``);
   for (const artifact of report.artifacts ?? []) {
-    lines.push(`- Collected: \`artifacts/${artifact.name}\` (${artifact.sizeBytes} bytes, sha256 \`${artifact.sha256}\`)`);
+    lines.push(
+      `- Collected: \`artifacts/${artifact.name}\` (${artifact.sizeBytes} bytes, sha256 \`${artifact.sha256}\`)`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }
 
+function selectedEvidenceCommands(report: RunReport): CommandEvidence[] {
+  if (!report.selectedEvidenceIds?.length) return report.commands;
+  const selected = new Set(report.selectedEvidenceIds);
+  return report.commands.filter(
+    (command) => command.evidenceId && selected.has(command.evidenceId),
+  );
+}
+
 export function isFinalizedRepro(report: RunReport): boolean {
-  if (report.status !== "reproduced" && report.status !== "not_reproduced" && report.status !== "blocked") {
+  if (
+    report.status !== "reproduced" &&
+    report.status !== "not_reproduced" &&
+    report.status !== "blocked"
+  ) {
     return false;
   }
   if (!report.summary?.trim()) {
@@ -123,7 +161,11 @@ export function redactSecret(value: string, secret: string | null): string {
 }
 
 function isFinalOutcome(status: RunReport["status"]): boolean {
-  return status === "reproduced" || status === "not_reproduced" || status === "blocked";
+  return (
+    status === "reproduced" ||
+    status === "not_reproduced" ||
+    status === "blocked"
+  );
 }
 
 function statusBlurb(report: RunReport): string {
@@ -170,20 +212,36 @@ function formatStatus(status: RunReport["status"]): string {
 }
 
 /** Prefer agent-supplied observed text; else last repro (or failing) command output, trimmed. */
-export function evidenceExcerpt(commands: CommandEvidence[], maxLogLines: number): string | null {
+export function evidenceExcerpt(
+  commands: CommandEvidence[],
+  maxLogLines: number,
+): string | null {
   const reproCommands = commands.filter((command) => command.name === "repro");
   const preferred =
-    [...reproCommands].reverse().find((command) => command.status === "failed" || command.status === "timed_out") ??
+    [...reproCommands]
+      .reverse()
+      .find(
+        (command) =>
+          command.status === "failed" || command.status === "timed_out",
+      ) ??
     reproCommands.at(-1) ??
-    commands.find((command) => command.status === "failed" || command.status === "timed_out");
+    commands.find(
+      (command) =>
+        command.status === "failed" || command.status === "timed_out",
+    );
 
   if (!preferred) {
     return null;
   }
 
-  const output = [preferred.stderr, preferred.stdout].filter(Boolean).join("\n").trim();
+  const output = [preferred.stderr, preferred.stdout]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
   if (!output) {
-    return preferred.status === "passed" ? null : "Command failed with no output.";
+    return preferred.status === "passed"
+      ? null
+      : "Command failed with no output.";
   }
 
   return trimLog(output, maxLogLines);
