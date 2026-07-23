@@ -52,7 +52,8 @@ describe("cli", () => {
     expect(output.stdout).toContain("Start with `relunar doctor --json`");
     expect(output.stdout).toContain("relunar issues list --state open --limit 20 --json");
     expect(output.stdout).toContain("Put `--comment` only on `repro finish`");
-    expect(output.stdout).toContain("issue-specific command evidence");
+    expect(output.stdout).toContain("explicit assertions until issue-specific evidence exists");
+    expect(output.stdout).toContain("Raw output is not verified proof");
     expect(output.stdout).toContain("relunar runs show <run-id> --json");
   });
 
