@@ -57,7 +57,7 @@ async function executeOne(
     stderr: evidence.stderr,
     timedOut: evidence.status === "timed_out",
   };
-  const checks = await evaluateChecks(input.sandbox, result, evidence.durationMs, expectations, input.timeoutSeconds);
+  const checks = await evaluateChecks(input.sandbox, result, evidence.durationMs, expectations, input.timeoutSeconds, input.cwd);
   const verified = checks.length > 0;
   evidence.verification = { verified, passed: verified && checks.every((check) => check.passed), attempt, totalAttempts, checks };
   return evidence;
@@ -88,6 +88,7 @@ async function evaluateChecks(
   durationMs: number,
   expectations: ProbeExpectations,
   timeoutSeconds: number,
+  cwd: string,
 ): Promise<ProbeCheck[]> {
   const checks: ProbeCheck[] = [];
   if (expectations.exitCode !== undefined) {
@@ -106,7 +107,7 @@ async function evaluateChecks(
     checks.push(check("max_duration", `<=${expectations.maxDurationMs}ms`, `${durationMs}ms`, durationMs <= expectations.maxDurationMs));
   }
   for (const path of expectations.filesExist ?? []) {
-    const exists = await sandbox.run(`test -e ${shellQuote(path)}`, ".", timeoutSeconds);
+    const exists = await sandbox.run(`test -e ${shellQuote(path)}`, cwd, timeoutSeconds);
     checks.push(check("file_exists", path, exists.exitCode === 0 ? "exists" : "missing", exists.exitCode === 0));
   }
   return checks;

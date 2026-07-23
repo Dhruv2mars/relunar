@@ -19,7 +19,7 @@ describe("assertion-driven probes", () => {
       expectations: {
         exitCode: 1,
         stderrMatches: "TypeError: empty config",
-        filesExist: ["repo/artifacts/trace.log"],
+        filesExist: ["artifacts/trace.log"],
       },
       evidenceId: "probe-1",
       claim: "Empty config crashes with TypeError",
@@ -36,6 +36,7 @@ describe("assertion-driven probes", () => {
     expect(evidence.every((attempt) => attempt.evidenceId === "probe-1")).toBe(true);
     expect(evidence.every((attempt) => attempt.claim === "Empty config crashes with TypeError")).toBe(true);
     expect(sandbox.commands.filter((command) => command === "bun repro.ts")).toHaveLength(3);
+    expect(sandbox.invocations.filter((call) => call.command.startsWith("test -e")).every((call) => call.cwd === "repo")).toBe(true);
   });
 
   test("records assertion mismatch instead of treating arbitrary output as proof", async () => {
@@ -127,11 +128,13 @@ class ProbeSandbox implements SandboxSession {
   readonly id = "probe-sandbox";
   readonly target = "test";
   readonly commands: string[] = [];
+  readonly invocations: Array<{ command: string; cwd: string | undefined }> = [];
 
   constructor(private readonly results: SandboxExecResult[]) {}
 
-  async run(command: string): Promise<SandboxExecResult> {
+  async run(command: string, cwd?: string): Promise<SandboxExecResult> {
     this.commands.push(command);
+    this.invocations.push({ command, cwd });
     if (command.startsWith("test -e")) {
       return result(0, "", "");
     }
