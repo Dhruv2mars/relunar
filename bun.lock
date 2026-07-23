@@ -38,7 +38,7 @@
     },
     "packages/cli": {
       "name": "@dhruv2mars/relunar",
-      "version": "0.2.1",
+      "version": "1.0.0",
       "bin": {
         "relunar": "dist/index.js",
       },
