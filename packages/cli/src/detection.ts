@@ -27,7 +27,13 @@ export async function detectSandboxImage(cwd: string): Promise<string | undefine
     return "mcr.microsoft.com/devcontainers/cpp:1-debian-12";
   }
 
-  if (await optionalRead(join(cwd, "pom.xml")) || await optionalRead(join(cwd, "gradlew"))) {
+  if (await optionalRead(join(cwd, "gradlew"))) {
+    const wrapper = await optionalRead(join(cwd, "gradle", "wrapper", "gradle-wrapper.properties"));
+    const version = wrapper ? /gradle-([0-9]+(?:\.[0-9]+)+)-(?:bin|all)\.zip/.exec(wrapper)?.[1] : undefined;
+    return version ? `gradle:${version}-jdk21` : "gradle:jdk21";
+  }
+
+  if (await optionalRead(join(cwd, "pom.xml"))) {
     return "mcr.microsoft.com/devcontainers/java:1-21-bookworm";
   }
 

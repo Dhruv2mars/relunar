@@ -134,6 +134,7 @@ describe("relunar config", () => {
       await Bun.write(join(cmakeDir, "CMakeLists.txt"), "cmake_minimum_required(VERSION 3.20)\n");
       await Bun.write(join(mavenDir, "pom.xml"), "<project/>\n");
       await Bun.write(join(gradleDir, "gradlew"), "#!/bin/sh\n");
+      await Bun.write(join(gradleDir, "gradle", "wrapper", "gradle-wrapper.properties"), "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-bin.zip\n");
       await writeRelunarConfig(join(goDir, ".relunar.yml"));
       await writeRelunarConfig(join(pythonDir, ".relunar.yml"));
       await writeRelunarConfig(join(autotoolsDir, ".relunar.yml"));
@@ -165,9 +166,9 @@ describe("relunar config", () => {
         baseline: ["mvn -B test"],
       });
       expect(parseRelunarConfig(await readFile(join(gradleDir, ".relunar.yml"), "utf8"))).toMatchObject({
-        sandbox: { image: "mcr.microsoft.com/devcontainers/java:1-21-bookworm" },
-        setup: ["chmod +x ./gradlew && ./gradlew --no-daemon classes"],
-        baseline: ["./gradlew --no-daemon test"],
+        sandbox: { image: "gradle:8.14-jdk21" },
+        setup: ["gradle --no-daemon classes"],
+        baseline: ["gradle --no-daemon test"],
       });
     } finally {
       await rm(dir, { recursive: true, force: true });

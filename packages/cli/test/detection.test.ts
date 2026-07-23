@@ -64,15 +64,19 @@ describe("sandbox image detection", () => {
     }
   });
 
-  test("detects Maven and Gradle Java projects", async () => {
-    for (const file of ["pom.xml", "gradlew"]) {
-      const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-java-"));
-      try {
-        await writeFile(join(cwd, file), "java project\n");
-        expect(await detectSandboxImage(cwd)).toBe("mcr.microsoft.com/devcontainers/java:1-21-bookworm");
-      } finally {
-        await rm(cwd, { recursive: true, force: true });
-      }
+  test("detects Maven and pinned Gradle Java projects", async () => {
+    const maven = await mkdtemp(join(tmpdir(), "relunar-detect-maven-"));
+    const gradle = await mkdtemp(join(tmpdir(), "relunar-detect-gradle-"));
+    try {
+      await writeFile(join(maven, "pom.xml"), "<project/>\n");
+      await writeFile(join(gradle, "gradlew"), "#!/bin/sh\n");
+      await mkdir(join(gradle, "gradle", "wrapper"), { recursive: true });
+      await writeFile(join(gradle, "gradle", "wrapper", "gradle-wrapper.properties"), "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-bin.zip\n");
+      expect(await detectSandboxImage(maven)).toBe("mcr.microsoft.com/devcontainers/java:1-21-bookworm");
+      expect(await detectSandboxImage(gradle)).toBe("gradle:8.14-jdk21");
+    } finally {
+      await rm(maven, { recursive: true, force: true });
+      await rm(gradle, { recursive: true, force: true });
     }
   });
 });

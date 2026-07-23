@@ -247,11 +247,13 @@ async function detectInitConfig(cwd: string): Promise<RelunarConfig> {
     };
   }
   if (await exists(join(cwd, "gradlew"))) {
+    const wrapper = await readOptional(join(cwd, "gradle", "wrapper", "gradle-wrapper.properties"));
+    const gradleVersion = wrapper ? /gradle-([0-9]+(?:\.[0-9]+)+)-(?:bin|all)\.zip/.exec(wrapper)?.[1] : undefined;
     return {
       ...defaultRelunarConfig,
-      sandbox: { ...defaultRelunarConfig.sandbox, image: "mcr.microsoft.com/devcontainers/java:1-21-bookworm" },
-      setup: ["chmod +x ./gradlew && ./gradlew --no-daemon classes"],
-      baseline: ["./gradlew --no-daemon test"],
+      sandbox: { ...defaultRelunarConfig.sandbox, image: gradleVersion ? `gradle:${gradleVersion}-jdk21` : "gradle:jdk21" },
+      setup: ["gradle --no-daemon classes"],
+      baseline: ["gradle --no-daemon test"],
     };
   }
   if (await exists(join(cwd, "pom.xml"))) {
@@ -280,6 +282,15 @@ async function exists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function readOptional(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (isNotFound(error)) return undefined;
+    throw error;
   }
 }
 
