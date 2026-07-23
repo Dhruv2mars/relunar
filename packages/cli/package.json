@@ -48,7 +48,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@daytona/sdk": "^0.192.0",
+    "@daytona/sdk": "0.200.1",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
