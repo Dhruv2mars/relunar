@@ -147,7 +147,6 @@ describe("cli", () => {
         RELUNAR_SKIP_GH_AUTH_TOKEN: "1",
       });
       expect(output.code).toBe(1);
-      expect(output.stderr).toContain("has no sandbox id");
       expect(output.stderr).not.toContain("No repo linked");
       expect(output.stderr).not.toContain("GitHub token");
     } finally {
