@@ -43,8 +43,8 @@ relunar doctor
 relunar issues list --state open --limit 20 --json
 relunar repro start 123
 relunar repro upload <run-id> ./repro.ts repro.ts
-relunar repro exec <run-id> --expect-exit 1 --stderr-match "compiler crash" -- bun repro.ts
-relunar repro finish <run-id> --outcome reproduced --summary "Compiler crashes on the supplied input." --repro-steps "1. Run bun repro.ts" --observed "Compiler exits 1 with compiler crash." --expected "Compilation succeeds." --environment "Node 22" --comment
+relunar repro exec <run-id> --claim "Compiler crashes on the supplied input" --expect-exit 1 --stderr-match "compiler crash" -- bun repro.ts
+relunar repro finish <run-id> --outcome reproduced --evidence probe-1 --summary "Compiler crashes on the supplied input." --repro-steps "1. Run bun repro.ts" --observed "Compiler exits 1 with compiler crash." --expected "Compilation succeeds." --environment "Node 22" --comment
 ```
 
 ## Repository Config

@@ -73,6 +73,18 @@ describe("sandbox image detection", () => {
     }
   });
 
+  test("uses a Python image for unpinned Python projects", async () => {
+    for (const file of ["pyproject.toml", "setup.py"]) {
+      const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-python-"));
+      try {
+        await writeFile(join(cwd, file), "# python project\n");
+        expect(await detectSandboxImage(cwd)).toBe("python:bookworm");
+      } finally {
+        await rm(cwd, { recursive: true, force: true });
+      }
+    }
+  });
+
   test("uses available rolling images for legacy minimum toolchains", async () => {
     const cases: Array<[string, string, string]> = [
       ["rust-toolchain", "1.45.0\n", "rust:bookworm"],

@@ -169,6 +169,24 @@ describe("agent-driven repro lifecycle", () => {
     }
   });
 
+  test("cleanup treats an already-disposed sandbox as completed", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-cleanup-disposed-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), "version: 1\nsetup: []\nbaseline: []\n", "utf8");
+      const sandbox = new FakeSandbox();
+      const started = await startRepro(input(cwd, fakeProvider(sandbox)));
+      expect(started.status).toBe("environment_ready");
+      const provider: SandboxProvider = {
+        createSandbox: async () => sandbox,
+        resumeSandbox: async () => { throw new Error("sandbox already disposed"); },
+      };
+      const cleaned = await cleanupRepro({ cwd, runId: started.runId, sandboxProvider: provider });
+      expect(cleaned.cleanup?.status).toBe("completed");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("installs dependencies before launching services and runs baseline after readiness", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-service-order-"));
     try {

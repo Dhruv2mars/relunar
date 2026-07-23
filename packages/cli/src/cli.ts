@@ -485,7 +485,8 @@ async function repro(
     const wantFinish = flagBoolean(flags, "finish");
     const outcome = parseOutcome(flagString(flags, "outcome"));
     const narrative = parseFinishNarrative(flags);
-    if (wantFinish && (!outcome || !narrative || (outcome !== "blocked" && !hasCompleteNarrative(narrative)))) {
+    const probeOptions = parseProbeOptions(flags);
+    if (wantFinish && (!outcome || !narrative || (outcome !== "blocked" && (!hasCompleteNarrative(narrative) || (!narrative.evidenceIds?.length && !probeOptions.claim))))) {
       deps.io.stderr(
         "Usage: relunar repro <issue-number> --finish --outcome reproduced|not-reproduced|blocked --summary <text> [--repro-steps <text>] [--observed <text>] [--expected <text>] [--environment <text>] -- <probe-command>\n",
       );
@@ -765,8 +766,20 @@ async function repro(
 }
 
 async function readRepositoryConfig(client: GitHubClient, repo: RepoSlug): Promise<RelunarConfig | null> {
-  const raw = await client.getRepositoryFile(repo, ".relunar.yml");
-  return raw === null ? null : parseRelunarConfig(raw);
+  let raw: string | null;
+  try {
+    raw = await client.getRepositoryFile(repo, ".relunar.yml");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Unable to read ${repo}/.relunar.yml: ${message}`, { cause: error });
+  }
+  if (raw === null) return null;
+  try {
+    return parseRelunarConfig(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid ${repo}/.relunar.yml: ${message}`, { cause: error });
+  }
 }
 
 function printReport(deps: CliDeps, report: RunReport): void {

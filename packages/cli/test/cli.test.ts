@@ -505,6 +505,22 @@ describe("cli", () => {
     }
   });
 
+  test("one-shot conclusive finish requires selectable evidence before network work", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-oneshot-evidence-"));
+    try {
+      const output = await invoke([
+        "repro", "12", "--finish", "--outcome", "reproduced", "--summary", "Crash reproduced.",
+        "--repro-steps", "Run bun test", "--observed", "Crash", "--expected", "Success",
+        "--environment", "Node 22", "--", "bun", "test",
+      ], dir, { XDG_CONFIG_HOME: join(dir, "config"), RELUNAR_SKIP_GH_AUTH_TOKEN: "1" });
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("Usage: relunar repro <issue-number> --finish --outcome");
+      expect(output.stderr).not.toContain("No repo linked");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("finish without a probe command does not fall through to start", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-finish-no-probe-"));
     try {

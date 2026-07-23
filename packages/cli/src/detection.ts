@@ -29,6 +29,9 @@ export async function detectSandboxImage(cwd: string): Promise<string | undefine
   if (python && /^\d+\.\d+(?:\.\d+)?$/.test(python)) {
     return legacyVersion(python, 3, 9) ? "python:bookworm" : `python:${python}-bookworm`;
   }
+  if (await optionalRead(join(cwd, "pyproject.toml")) || await optionalRead(join(cwd, "setup.py"))) {
+    return "python:bookworm";
+  }
 
   const go = await optionalRead(join(cwd, "go.mod"));
   const goVersion = go ? /^go\s+(\d+\.\d+(?:\.\d+)?)/m.exec(go)?.[1] : undefined;

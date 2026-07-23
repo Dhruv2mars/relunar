@@ -16,9 +16,7 @@ export async function prepareTerminalEnvironment(input: {
   timeoutSeconds: number;
 }): Promise<PreparedTerminalEnvironment> {
   const commandEnv = resolveCommandEnv(input.config, input.hostEnv);
-  const commandSecrets = (input.config.environment?.passthrough ?? [])
-    .map((name) => commandEnv[name])
-    .filter((value): value is string => Boolean(value));
+  const commandSecrets = resolveCommandSecrets(input.config, commandEnv);
   const workdir = resolveWorkdir(input.config.workspace?.workdir);
   const commands: CommandEvidence[] = [];
 
@@ -59,9 +57,7 @@ export async function startTerminalServices(input: {
   timeoutSeconds: number;
 }): Promise<{ commands: CommandEvidence[]; failure: string | null }> {
   const commands: CommandEvidence[] = [];
-  const commandSecrets = (input.config.environment?.passthrough ?? [])
-    .map((name) => input.commandEnv[name])
-    .filter((value): value is string => Boolean(value));
+  const commandSecrets = resolveCommandSecrets(input.config, input.commandEnv);
   for (const service of input.config.services ?? []) {
     const start = await runEvidence(
       input.sandbox,
@@ -100,6 +96,12 @@ export function resolveCommandEnv(config: RelunarConfig, hostEnv: NodeJS.Process
     env[name] = value;
   }
   return env;
+}
+
+export function resolveCommandSecrets(config: RelunarConfig, commandEnv: Record<string, string>): string[] {
+  return (config.environment?.passthrough ?? [])
+    .map((name) => commandEnv[name])
+    .filter((value): value is string => Boolean(value));
 }
 
 export function resolveWorkdir(relative: string | undefined): string {

@@ -4,7 +4,7 @@ import { collectArtifacts } from "./artifacts";
 import { parseRelunarConfig, defaultRelunarConfig, resolveAutoStopMinutes } from "./config";
 import { assertEvidenceGates } from "./evidence";
 import { detectSandboxImage } from "./detection";
-import { prepareTerminalEnvironment, resolveCommandEnv, resolveWorkdir, startTerminalServices } from "./environment";
+import { prepareTerminalEnvironment, resolveCommandEnv, resolveCommandSecrets, resolveWorkdir, startTerminalServices } from "./environment";
 import { executeProbe } from "./probe";
 import { redactSecret, withAgentNextStep } from "./reports";
 import { createRunId, readRun, runStoreDir, withRunLock, writeRun } from "./runs";
@@ -106,9 +106,7 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
     });
     workdir = prepared.workdir;
     commandEnv = prepared.commandEnv;
-    const commandSecrets = (config.environment?.passthrough ?? [])
-      .map((name) => commandEnv[name])
-      .filter((value): value is string => Boolean(value));
+    const commandSecrets = resolveCommandSecrets(config, commandEnv);
     environment = prepared.fingerprint;
     commands.push(...prepared.commands);
     const preparedCommit = await sandbox.run("git rev-parse HEAD", "repo", commandTimeoutSeconds);
@@ -202,9 +200,7 @@ async function execReproUnlocked(input: ExecReproInput): Promise<RunReport> {
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const workdir = resolveWorkdir(config.workspace?.workdir);
   const commandEnv = resolveCommandEnv(config, input.hostEnv ?? process.env);
-  const commandSecrets = (config.environment?.passthrough ?? [])
-    .map((name) => commandEnv[name])
-    .filter((value): value is string => Boolean(value));
+  const commandSecrets = resolveCommandSecrets(config, commandEnv);
 
   const shouldSync = input.sync === true || config.sync?.onExec === true;
   if (shouldSync) {
@@ -427,7 +423,7 @@ async function cleanupReproUnlocked(input: {
     return await persistRun(input.cwd, report, config.report.maxLogLines);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/not found|404|deleted|does not exist/i.test(message)) {
+    if (isMissingSandboxError(error)) {
       report.cleanup = { status: "completed", error: null, updatedAt: new Date().toISOString() };
       return await persistRun(input.cwd, report, config.report.maxLogLines);
     }
