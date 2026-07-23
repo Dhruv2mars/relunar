@@ -25,5 +25,6 @@
   { "repo": "Dhruv2mars/typescript-relunar-testbed", "issue": 5011, "ecosystem": "typescript", "kind": "bug", "expectedOutcome": "reproduced" },
   { "repo": "pallets/click", "issue": 3571, "ecosystem": "python", "kind": "bug", "expectedOutcome": "reproduced" },
   { "repo": "spf13/pflag", "issue": 415, "ecosystem": "go", "kind": "bug", "expectedOutcome": "reproduced" },
-  { "repo": "jqlang/jq", "issue": 3538, "ecosystem": "c", "kind": "bug", "expectedOutcome": "reproduced" }
+  { "repo": "jqlang/jq", "issue": 3538, "ecosystem": "c", "kind": "bug", "expectedOutcome": "reproduced" },
+  { "repo": "remkop/picocli", "issue": 2506, "ecosystem": "java", "kind": "bug", "expectedOutcome": "reproduced" }
 ]
