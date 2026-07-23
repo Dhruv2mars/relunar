@@ -2,10 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { lockOwnerIsDead } from "../src/locks";
 import { readRun, updateRun, writeRun } from "../src/runs";
 import type { RunReport } from "../src/types";
 
 describe("durable run store", () => {
+  test("does not reclaim a normally released lock path", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-runs-missing-lock-"));
+    try {
+      expect(await lockOwnerIsDead(join(cwd, "released.lock"))).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("serializes concurrent updates without losing writes", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-runs-lock-"));
     try {

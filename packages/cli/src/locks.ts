@@ -32,7 +32,11 @@ export async function lockOwnerIsDead(path: string): Promise<boolean> {
       return error instanceof Error && "code" in error && error.code === "ESRCH";
     }
   } catch (error) {
-    return error instanceof Error && "code" in error && error.code === "ENOENT";
+    // A lock that vanished normally was released, not proven stale. Returning
+    // false prevents this reclaimer from deleting a successor created between
+    // this read and its unlink; the caller simply retries acquisition.
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
   }
 }
 
