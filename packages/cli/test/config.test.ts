@@ -118,6 +118,29 @@ describe("relunar config", () => {
     }
   });
 
+  test("detects Go and Python repositories when writing init config", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-config-detect-"));
+    try {
+      const goDir = join(dir, "go");
+      const pythonDir = join(dir, "python");
+      await Bun.write(join(goDir, "go.mod"), "module example.com/test\n\ngo 1.22\n");
+      await Bun.write(join(pythonDir, "pyproject.toml"), "[project]\nname = 'sample'\nversion = '1.0.0'\n");
+      await writeRelunarConfig(join(goDir, ".relunar.yml"));
+      await writeRelunarConfig(join(pythonDir, ".relunar.yml"));
+
+      expect(parseRelunarConfig(await readFile(join(goDir, ".relunar.yml"), "utf8"))).toMatchObject({
+        setup: ["go mod download"],
+        baseline: ["go test ./..."],
+      });
+      expect(parseRelunarConfig(await readFile(join(pythonDir, ".relunar.yml"), "utf8"))).toMatchObject({
+        setup: ["python3 -m venv .venv", ". .venv/bin/activate && python -m pip install -e ."],
+        baseline: [". .venv/bin/activate && python -m pip check"],
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("links repo in global config by cwd", async () => {
     const dir = await mkdtemp(join(tmpdir(), "relunar-global-"));
     try {
@@ -125,6 +148,19 @@ describe("relunar config", () => {
       const cwd = join(dir, "repo");
       await linkRepo(cwd, "owner/repo", path);
       expect((await readGlobalConfig(path)).repoLinks[cwd]).toBe("owner/repo");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves every repo link under concurrent global config updates", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-global-concurrent-"));
+    try {
+      const path = join(dir, "config.json");
+      await Promise.all(Array.from({ length: 20 }, (_, index) => linkRepo(join(dir, `repo-${index}`), `owner/repo-${index}`, path)));
+      const config = await readGlobalConfig(path);
+      expect(Object.keys(config.repoLinks)).toHaveLength(20);
+      expect(JSON.parse(await readFile(path, "utf8"))).toEqual(config);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

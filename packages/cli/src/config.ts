@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parse, stringify } from "yaml";
@@ -146,7 +147,7 @@ export function renderRelunarConfig(config: RelunarConfig = defaultRelunarConfig
 }
 
 export async function writeRelunarConfig(path: string): Promise<void> {
-  await writeFile(path, renderRelunarConfig(), { flag: "wx" });
+  await writeFile(path, renderRelunarConfig(await detectInitConfig(dirname(path))), { flag: "wx" });
 }
 
 function configHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -170,21 +171,22 @@ export async function readGlobalConfig(path = globalConfigPath()): Promise<Globa
 }
 
 export async function writeGlobalConfig(config: GlobalConfig, path = globalConfigPath()): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(globalConfigSchema.parse(config), null, 2)}\n`, "utf8");
+  await withConfigLock(path, () => writeGlobalConfigUnlocked(config, path));
 }
 
 export async function linkRepo(cwd: string, repo: RepoSlug, path = globalConfigPath()): Promise<GlobalConfig> {
-  const config = await readGlobalConfig(path);
-  const next: GlobalConfig = {
-    ...config,
-    repoLinks: {
-      ...config.repoLinks,
-      [cwd]: repo,
-    },
-  };
-  await writeGlobalConfig(next, path);
-  return next;
+  return withConfigLock(path, async () => {
+    const config = await readGlobalConfig(path);
+    const next: GlobalConfig = {
+      ...config,
+      repoLinks: {
+        ...config.repoLinks,
+        [cwd]: repo,
+      },
+    };
+    await writeGlobalConfigUnlocked(next, path);
+    return next;
+  });
 }
 
 export async function findLinkedRepo(cwd: string, path = globalConfigPath()): Promise<RepoSlug | null> {
@@ -198,4 +200,71 @@ export function resolveAutoStopMinutes(config: RelunarConfig): number {
 
 function isNotFound(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+async function detectInitConfig(cwd: string): Promise<RelunarConfig> {
+  if (await exists(join(cwd, "go.mod"))) {
+    return { ...defaultRelunarConfig, setup: ["go mod download"], baseline: ["go test ./..."] };
+  }
+  if (await exists(join(cwd, "Cargo.toml"))) {
+    return { ...defaultRelunarConfig, setup: ["cargo fetch"], baseline: ["cargo test --no-run"] };
+  }
+  if (await exists(join(cwd, "pyproject.toml")) || await exists(join(cwd, "setup.py"))) {
+    return {
+      ...defaultRelunarConfig,
+      setup: ["python3 -m venv .venv", ". .venv/bin/activate && python -m pip install -e ."],
+      baseline: [". .venv/bin/activate && python -m pip check"],
+    };
+  }
+  if (await exists(join(cwd, "package-lock.json"))) {
+    return { ...defaultRelunarConfig, setup: ["npm ci"], baseline: ["npm test"] };
+  }
+  if (await exists(join(cwd, "pnpm-lock.yaml"))) {
+    return { ...defaultRelunarConfig, setup: ["corepack enable && pnpm install --frozen-lockfile"], baseline: ["pnpm test"] };
+  }
+  if (await exists(join(cwd, "yarn.lock"))) {
+    return { ...defaultRelunarConfig, setup: ["corepack enable && yarn install --immutable"], baseline: ["yarn test"] };
+  }
+  return defaultRelunarConfig;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function writeGlobalConfigUnlocked(config: GlobalConfig, path: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const temp = `${path}.tmp-${randomUUID()}`;
+  try {
+    await writeFile(temp, `${JSON.stringify(globalConfigSchema.parse(config), null, 2)}\n`, "utf8");
+    await rename(temp, path);
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
+}
+
+async function withConfigLock<T>(path: string, action: () => Promise<T>): Promise<T> {
+  await mkdir(dirname(path), { recursive: true });
+  const lockPath = `${path}.lock`;
+  const deadline = Date.now() + 30_000;
+  while (true) {
+    try {
+      const handle = await open(lockPath, "wx");
+      await handle.close();
+      try {
+        return await action();
+      } finally {
+        await unlink(lockPath).catch(() => undefined);
+      }
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      if (Date.now() >= deadline) throw new Error("Timed out waiting for Relunar global config lock.");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
 }
