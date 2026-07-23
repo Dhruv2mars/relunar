@@ -3,11 +3,32 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseArgs } from "../src/args";
+import { parseRelunarConfig } from "../src/config";
 import { cleanupRepro, execRepro, finishRepro, startRepro, uploadReproFile } from "../src/repro";
 import { findActiveRunForIssue } from "../src/runs";
 import type { Issue, SandboxExecResult, SandboxProvider, SandboxSession } from "../src/types";
 
 describe("agent-driven repro lifecycle", () => {
+  test("uses and persists repository configuration before sandbox creation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-remote-config-"));
+    try {
+      const sandbox = new FakeSandbox();
+      let createInput: Parameters<SandboxProvider["createSandbox"]>[0] | undefined;
+      const provider: SandboxProvider = {
+        createSandbox: async (value) => { createInput = value; return sandbox; },
+        resumeSandbox: async () => sandbox,
+      };
+      const repositoryConfig = parseRelunarConfig("version: 1\nsetup: []\nbaseline: []\ncommandTimeoutSeconds: 91\nsandbox:\n  snapshot: snap-123\nworkspace:\n  workdir: packages/cli\n");
+      const started = await startRepro({ ...input(cwd, provider), repositoryConfig });
+      expect(createInput).toMatchObject({ snapshot: "snap-123", timeoutSeconds: 91 });
+      expect(createInput?.image).toBeUndefined();
+      expect(started.effectiveConfig?.workspace?.workdir).toBe("packages/cli");
+      await execRepro({ cwd, runId: started.runId, command: "true", expectations: { exitCode: 0 }, sandboxProvider: provider });
+      expect(sandbox.invocations.at(-1)?.cwd).toBe("repo/packages/cli");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
   test("keeps ready sandbox, records issue evidence, then finalizes and cleans up", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "relunar-lifecycle-"));
     try {
@@ -341,8 +362,10 @@ class FakeSandbox implements SandboxSession {
   disposed = false;
   touchCount = 0;
   readonly uploads: Array<{ localPath: string; remotePath: string }> = [];
+  readonly invocations: Array<{ command: string; cwd: string | undefined }> = [];
 
-  async run(command: string): Promise<SandboxExecResult> {
+  async run(command: string, cwd?: string): Promise<SandboxExecResult> {
+    this.invocations.push({ command, cwd });
     if (command.includes("git rev-parse")) return ok("abc123\n");
     if (command === "true") return ok("");
     return ok(command === "bun repro.ts" ? "crash reproduced" : "ok");

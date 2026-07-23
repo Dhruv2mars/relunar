@@ -129,6 +129,32 @@ describe("cli", () => {
     }
   });
 
+  test("cleanup does not require repository or GitHub configuration", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "relunar-cleanup-prereqs-"));
+    try {
+      const runDir = join(dir, ".relunar", "runs", "run-1");
+      await mkdir(runDir, { recursive: true });
+      await Bun.write(join(runDir, "report.json"), JSON.stringify({
+        schemaVersion: 2,
+        runId: "run-1",
+        status: "reproduced",
+        trust: "verified",
+        sandbox: { provider: "daytona", id: null, target: null },
+        commands: [],
+      }));
+      const output = await invoke(["repro", "cleanup", "run-1"], dir, {
+        XDG_CONFIG_HOME: join(dir, "config"),
+        RELUNAR_SKIP_GH_AUTH_TOKEN: "1",
+      });
+      expect(output.code).toBe(1);
+      expect(output.stderr).toContain("has no sandbox id");
+      expect(output.stderr).not.toContain("No repo linked");
+      expect(output.stderr).not.toContain("GitHub token");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("prints supported skills", async () => {
     const output = await invoke(["skills", "list"]);
     expect(output.code).toBe(0);
@@ -148,6 +174,11 @@ describe("cli", () => {
     );
     expect(output.stdout).toContain("Raw output is not verified proof");
     expect(output.stdout).toContain("relunar runs show <run-id> --json");
+
+    const cursor = await invoke(["skills", "get", "cursor"]);
+    expect(cursor.code).toBe(0);
+    expect(cursor.stdout).toContain("-- bash -c '<script>'");
+    expect(cursor.stdout).toContain("avoid login shells");
   });
 
   test("shows missing doctor checks", async () => {

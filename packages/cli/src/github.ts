@@ -1,6 +1,7 @@
 import type { Issue, RepoSlug } from "./types";
 
 export class GitHubClient {
+  private authenticatedLogin: string | undefined;
   constructor(
     private readonly token: string,
     private readonly fetchImpl: typeof fetch = fetch,
@@ -109,13 +110,37 @@ export class GitHubClient {
     return response.html_url;
   }
 
+  async getRepositoryFile(repo: RepoSlug, path: string): Promise<string | null> {
+    try {
+      const file = await this.request<{ content: string; encoding: string }>(
+        `/repos/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}`,
+        { method: "GET" },
+      );
+      if (file.encoding !== "base64") throw new Error(`Unsupported GitHub content encoding: ${file.encoding}`);
+      return Buffer.from(file.content.replaceAll("\n", ""), "base64").toString("utf8");
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("GitHub API 404 ")) return null;
+      throw error;
+    }
+  }
+
   async findComment(
     repo: RepoSlug,
     issueNumber: number,
     marker: string,
   ): Promise<string | null> {
-    const comments = await this.listIssueComments(repo, issueNumber);
-    return comments.find((comment) => comment.body?.includes(marker))?.html_url ?? null;
+    const [comments, login] = await Promise.all([
+      this.listIssueComments(repo, issueNumber),
+      this.getAuthenticatedLogin(),
+    ]);
+    return comments.find((comment) => comment.user?.login === login && comment.body?.includes(marker))?.html_url ?? null;
+  }
+
+  private async getAuthenticatedLogin(): Promise<string> {
+    if (!this.authenticatedLogin) {
+      this.authenticatedLogin = (await this.request<{ login: string }>("/user", { method: "GET" })).login;
+    }
+    return this.authenticatedLogin;
   }
 
   private async listIssueComments(

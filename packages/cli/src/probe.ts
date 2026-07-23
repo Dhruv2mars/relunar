@@ -33,7 +33,9 @@ export async function executeProbe(input: ExecuteProbeInput): Promise<CommandEvi
   }
   for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
     if (attempt > 1 && input.resetCommand) {
-      evidence.push(await executeUnverified(input, "probe_reset", input.resetCommand));
+      const reset = await executeOne(input, "probe_reset", input.resetCommand, { exitCode: 0 }, attempt, totalAttempts);
+      evidence.push(reset);
+      if (!reset.verification?.passed) return evidence;
     }
     evidence.push(await executeOne(input, "repro", input.command, input.expectations, attempt, totalAttempts));
   }
@@ -69,7 +71,7 @@ async function executeUnverified(input: ExecuteProbeInput, name: string, command
   const raw = await input.sandbox.run(command, input.cwd, input.timeoutSeconds, input.env);
   return {
     name,
-    command,
+    command: redact(command, input.secrets ?? []),
     status: raw.timedOut ? "timed_out" : raw.exitCode === 0 ? "passed" : "failed",
     exitCode: raw.exitCode,
     durationMs: Date.now() - started,

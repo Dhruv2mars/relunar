@@ -2,7 +2,7 @@ import { mkdir, open, readdir, readFile, rename, unlink, writeFile } from "node:
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { renderMarkdownReport } from "./reports";
-import { lockOwnerIsDead } from "./locks";
+import { reclaimDeadLock } from "./locks";
 import type { CommandEvidence, RepoSlug, RunReport } from "./types";
 
 export function runStoreDir(cwd: string): string {
@@ -121,10 +121,7 @@ async function acquireRunLock(cwd: string, runId: string): Promise<() => Promise
       };
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-      if (await lockOwnerIsDead(path)) {
-        await unlink(path).catch(() => undefined);
-        continue;
-      }
+      if (await reclaimDeadLock(path)) continue;
       if (Date.now() >= deadline) throw new Error(`Timed out waiting for run lock: ${runId}`);
       await new Promise((resolve) => setTimeout(resolve, 25));
     }

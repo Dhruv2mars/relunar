@@ -16,6 +16,21 @@ describe("sandbox image detection", () => {
     }
   });
 
+  test("reads only the top-level image from JSONC", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-detect-jsonc-"));
+    try {
+      await mkdir(join(cwd, ".devcontainer"));
+      await writeFile(join(cwd, ".devcontainer", "devcontainer.json"), `{
+        // "image": "attacker/commented:latest",
+        "customizations": { "image": "attacker/nested:latest" },
+        "image": "node:22-bookworm",
+      }`);
+      expect(await detectSandboxImage(cwd)).toBe("node:22-bookworm");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("detects rust, python, go, and node toolchains", async () => {
     const cases: Array<[string, string, string]> = [
       ["rust-toolchain.toml", '[toolchain]\nchannel = "1.80.1"\n', "rust:1.80.1-bookworm"],

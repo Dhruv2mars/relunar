@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { open, readFile, unlink } from "node:fs/promises";
 
 /** A lock is reclaimable only when its recorded owner no longer exists. */
 export async function lockOwnerIsDead(path: string): Promise<boolean> {
@@ -15,5 +15,27 @@ export async function lockOwnerIsDead(path: string): Promise<boolean> {
     }
   } catch (error) {
     return error instanceof Error && "code" in error && error.code === "ENOENT";
+  }
+}
+
+/** Serializes stale-owner checks so an observer can never remove a successor's live lock. */
+export async function reclaimDeadLock(path: string): Promise<boolean> {
+  const reclaimPath = `${path}.reclaim`;
+  let handle;
+  try {
+    handle = await open(reclaimPath, "wx");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") return false;
+    throw error;
+  }
+  try {
+    if (!(await lockOwnerIsDead(path))) return false;
+    await unlink(path).catch((error: unknown) => {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    });
+    return true;
+  } finally {
+    await handle.close();
+    await unlink(reclaimPath).catch(() => undefined);
   }
 }

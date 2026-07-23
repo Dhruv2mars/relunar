@@ -168,6 +168,8 @@ export type RunReport = {
     attachments?: string[] | undefined;
   };
   repo: RepoSlug;
+  /** Configuration used to create and operate this run's sandbox. */
+  effectiveConfig?: RelunarConfig | undefined;
   commit: string | null;
   sandbox: {
     provider: "daytona";

@@ -19,6 +19,7 @@ export type ReproInput = {
   sandboxProvider: SandboxProvider;
   commandTimeoutSeconds?: number;
   hostEnv?: NodeJS.ProcessEnv | undefined;
+  repositoryConfig?: RelunarConfig | null | undefined;
 };
 
 export async function runRepro(input: ReproInput): Promise<RunReport> {
@@ -46,11 +47,14 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
   try {
     const localConfig = await readLocalConfig(input.cwd);
     const hasLocalConfig = localConfig !== null;
-    if (localConfig) {
-      config = localConfig;
+    const preflightConfig = localConfig ?? input.repositoryConfig;
+    if (preflightConfig) {
+      config = preflightConfig;
       commandTimeoutSeconds = input.commandTimeoutSeconds ?? config.commandTimeoutSeconds;
     }
-    sandboxImage = config.sandbox?.image ?? await detectSandboxImage(input.cwd);
+    sandboxImage = config.sandbox?.snapshot
+      ? undefined
+      : config.sandbox?.image ?? await detectSandboxImage(input.cwd);
     sandbox = await input.sandboxProvider.createSandbox({
       runId,
       image: sandboxImage,
@@ -79,7 +83,7 @@ async function runInitialRepro(input: ReproInput, disposeOnReady: boolean): Prom
     const commitResult = await sandbox.run("git rev-parse HEAD", "repo", commandTimeoutSeconds);
     commit = commitResult.exitCode === 0 ? commitResult.stdout.trim() : null;
 
-    if (!hasLocalConfig) {
+    if (!hasLocalConfig && !input.repositoryConfig) {
       const configResult = await sandbox.run("test -f .relunar.yml && cat .relunar.yml || true", "repo", commandTimeoutSeconds);
       if (configResult.stdout.trim().length > 0) {
         config = parseRelunarConfig(configResult.stdout);
@@ -168,7 +172,7 @@ export type ExecReproInput = {
 
 export async function execRepro(input: ExecReproInput): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
-  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const config = await configForRun(input.cwd, report);
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const workdir = resolveWorkdir(config.workspace?.workdir);
   const commandEnv = resolveCommandEnv(config, input.hostEnv ?? process.env);
@@ -215,7 +219,7 @@ export async function syncRepro(input: {
   includeUntracked?: boolean | undefined;
 }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
-  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const config = await configForRun(input.cwd, report);
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const syncEvidence = await recordSync(input.cwd, report.runId, sandbox, config, input.includeUntracked);
   report.commands.push(syncEvidence);
@@ -229,7 +233,7 @@ export async function syncRepro(input: {
 
 export async function uploadReproFile(input: { cwd: string; runId: string; localPath: string; remotePath: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
-  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const config = await configForRun(input.cwd, report);
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
   const remotePath = resolveRemoteUploadPath(resolveWorkdir(config.workspace?.workdir), input.remotePath);
   const started = Date.now();
@@ -277,7 +281,7 @@ export async function finishRepro(
   if (!summary) {
     throw new Error("Cannot finish repro without a summary.");
   }
-  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const config = await configForRun(input.cwd, report);
   const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
 
   if (input.outcome !== "blocked" && !input.evidenceIds?.length) {
@@ -336,7 +340,7 @@ export async function cleanupRepro(input: {
 }): Promise<RunReport> {
   const report = await readRun(input.cwd, input.runId);
   if (report.cleanup?.status === "completed") return report;
-  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const config = await configForRun(input.cwd, report);
   report.cleanup = { status: "pending", error: null, updatedAt: new Date().toISOString() };
   await persistRun(input.cwd, report, config.report.maxLogLines);
   try {
@@ -368,7 +372,7 @@ function optionalText(value: string | undefined): string | null {
 
 export async function abortRepro(input: { cwd: string; runId: string; sandboxProvider: SandboxProvider }): Promise<RunReport> {
   const report = await requireReadyRun(input.cwd, input.runId);
-  const config = (await readLocalConfig(input.cwd)) ?? defaultRelunarConfig;
+  const config = await configForRun(input.cwd, report);
   try {
     const sandbox = await resumeAndTouch(input.cwd, input.sandboxProvider, report, config);
     await sandbox.dispose();
@@ -546,6 +550,7 @@ async function finish(
       attachments: input.issue.attachments,
     },
     repo: input.repo,
+    effectiveConfig: config,
     commit,
     sandbox: {
       provider: "daytona",
@@ -592,6 +597,10 @@ async function readLocalConfig(cwd: string): Promise<RelunarConfig | null> {
     }
     throw error;
   }
+}
+
+async function configForRun(cwd: string, report: RunReport): Promise<RelunarConfig> {
+  return report.effectiveConfig ?? (await readLocalConfig(cwd)) ?? defaultRelunarConfig;
 }
 
 function isNotFound(error: unknown): boolean {

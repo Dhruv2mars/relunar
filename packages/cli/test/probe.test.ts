@@ -109,6 +109,40 @@ describe("assertion-driven probes", () => {
     expect(sandbox.commands).toEqual(["run-control", "run-bug-case", "reset-fixture", "run-bug-case"]);
   });
 
+  test("stops repeated probes when fixture reset fails", async () => {
+    const sandbox = new ProbeSandbox([
+      result(0, "bug", ""),
+      result(1, "", "reset failed"),
+    ], true);
+    const evidence = await executeProbe({
+      sandbox,
+      command: "run-bug-case",
+      cwd: "repo",
+      timeoutSeconds: 30,
+      expectations: { exitCode: 0 },
+      repeat: 3,
+      resetCommand: "reset-fixture",
+      evidenceId: "probe-1",
+    });
+
+    expect(sandbox.commands).toEqual(["run-bug-case", "reset-fixture"]);
+    expect(evidence.at(-1)?.verification?.passed).toBe(false);
+    expect(evidence.at(-1)?.evidenceId).toBe("probe-1");
+  });
+
+  test("redacts secrets from persisted command text", async () => {
+    const sandbox = new ProbeSandbox([result(0, "ok", "")]);
+    const [evidence] = await executeProbe({
+      sandbox,
+      command: "tool --token super-secret",
+      cwd: "repo",
+      timeoutSeconds: 30,
+      expectations: { exitCode: 0 },
+      secrets: ["super-secret"],
+    });
+    expect(evidence?.command).toBe("tool --token [redacted]");
+  });
+
   test("records a Daytona-style timeout as a failed assertion without losing evidence", async () => {
     const sandbox = new ProbeSandbox([{ exitCode: null, stdout: "partial output", stderr: "", timedOut: true }]);
     const [evidence] = await executeProbe({
@@ -130,7 +164,7 @@ class ProbeSandbox implements SandboxSession {
   readonly commands: string[] = [];
   readonly invocations: Array<{ command: string; cwd: string | undefined }> = [];
 
-  constructor(private readonly results: SandboxExecResult[]) {}
+  constructor(private readonly results: SandboxExecResult[], private readonly failReset = false) {}
 
   async run(command: string, cwd?: string): Promise<SandboxExecResult> {
     this.commands.push(command);
@@ -138,7 +172,7 @@ class ProbeSandbox implements SandboxSession {
     if (command.startsWith("test -e")) {
       return result(0, "", "");
     }
-    if (command === "reset-fixture") return result(0, "", "");
+    if (command === "reset-fixture" && !this.failReset) return result(0, "", "");
     const next = this.results.shift();
     if (!next) throw new Error(`Missing result for ${command}`);
     return next;

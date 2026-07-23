@@ -13,6 +13,7 @@ import {
   globalConfigPath,
   isRepoSlug,
   linkRepo,
+  parseRelunarConfig,
   readGlobalConfig,
   writeGlobalConfig,
   writeRelunarConfig,
@@ -51,6 +52,7 @@ import {
 } from "./skills";
 import type {
   ProbeExpectations,
+  RelunarConfig,
   RepoSlug,
   ReproOutcome,
   RunReport,
@@ -501,18 +503,18 @@ async function repro(
     }
   }
 
-  const repo = await requireRepo(deps);
-  const token = await requireGithubToken(deps);
-  const client = new GitHubClient(token);
   if (action === "comment" && args[1] === "post") {
     if (!args[2]) {
       deps.io.stderr("Usage: relunar repro comment post <run-id>\n");
       return 1;
     }
-    const posted = await publishRunComment(deps.cwd, args[2], client, 40);
+    await requireRepo(deps);
+    const commentToken = await requireGithubToken(deps);
+    const posted = await publishRunComment(deps.cwd, args[2], new GitHubClient(commentToken), 40);
     printReport(deps, posted);
     return 0;
   }
+
   const globalConfig = await readGlobalConfig(configPath(deps));
   const daytonaKey = await resolveDaytonaApiKey(deps.env);
   if (!daytonaKey) {
@@ -526,6 +528,19 @@ async function repro(
     apiUrl: deps.env.RELUNAR_DAYTONA_API_URL ?? globalConfig.daytona?.apiUrl,
     target: deps.env.RELUNAR_DAYTONA_TARGET ?? globalConfig.daytona?.target,
   });
+  if (action === "cleanup") {
+    if (!args[1]) {
+      deps.io.stderr("Usage: relunar repro cleanup <run-id>\n");
+      return 1;
+    }
+    const cleaned = await cleanupRepro({ cwd: deps.cwd, runId: args[1], sandboxProvider: provider });
+    printReport(deps, cleaned);
+    return 0;
+  }
+
+  const repo = await requireRepo(deps);
+  const token = await requireGithubToken(deps);
+  const client = new GitHubClient(token);
   let report: RunReport;
 
   if (action === "oneshot") {
@@ -546,6 +561,7 @@ async function repro(
         githubToken: token,
         sandboxProvider: provider,
         hostEnv: deps.env,
+        repositoryConfig: await readRepositoryConfig(client, repo),
       });
     }
 
@@ -578,6 +594,7 @@ async function repro(
         githubToken: token,
         sandboxProvider: provider,
         hostEnv: deps.env,
+        repositoryConfig: await readRepositoryConfig(client, repo),
       });
       if (report.status !== "environment_ready") {
         printReport(deps, report);
@@ -634,6 +651,7 @@ async function repro(
       githubToken: token,
       sandboxProvider: provider,
       hostEnv: deps.env,
+      repositoryConfig: await readRepositoryConfig(client, repo),
     });
   } else if (action === "exec") {
     if (!args[1] || passthrough.length === 0) {
@@ -709,16 +727,6 @@ async function repro(
       runId: report.runId,
       sandboxProvider: provider,
     });
-  } else if (action === "cleanup") {
-    if (!args[1]) {
-      deps.io.stderr("Usage: relunar repro cleanup <run-id>\n");
-      return 1;
-    }
-    report = await cleanupRepro({
-      cwd: deps.cwd,
-      runId: args[1],
-      sandboxProvider: provider,
-    });
   } else if (action === "abort") {
     if (!args[1]) {
       deps.io.stderr("Usage: relunar repro abort <run-id>\n");
@@ -740,6 +748,11 @@ async function repro(
   return report.status === "setup_failed" || report.status === "baseline_failed"
     ? 1
     : 0;
+}
+
+async function readRepositoryConfig(client: GitHubClient, repo: RepoSlug): Promise<RelunarConfig | null> {
+  const raw = await client.getRepositoryFile(repo, ".relunar.yml");
+  return raw === null ? null : parseRelunarConfig(raw);
 }
 
 function printReport(deps: CliDeps, report: RunReport): void {

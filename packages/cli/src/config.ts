@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
 import type { GlobalConfig, RelunarConfig, RepoSlug } from "./types";
-import { lockOwnerIsDead } from "./locks";
+import { reclaimDeadLock } from "./locks";
 
 const evidenceGateSchema = z
   .object({
@@ -472,10 +472,7 @@ async function withConfigLock<T>(
         error.code === "EEXIST"
       ))
         throw error;
-      if (await lockOwnerIsDead(lockPath)) {
-        await unlink(lockPath).catch(() => undefined);
-        continue;
-      }
+      if (await reclaimDeadLock(lockPath)) continue;
       if (Date.now() >= deadline)
         throw new Error("Timed out waiting for Relunar global config lock.");
       await new Promise((resolve) => setTimeout(resolve, 10));

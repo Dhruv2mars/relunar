@@ -103,6 +103,7 @@ describe("GitHubClient", () => {
     const fetchImpl = async (url: string | URL | Request) => {
       const parsed = new URL(String(url));
       requests.push(parsed.href);
+      if (parsed.pathname === "/user") return jsonResponse({ login: "maintainer" });
       if (!parsed.pathname.endsWith("/comments")) return jsonResponse(githubIssue(1));
       if (parsed.searchParams.get("page") === "1") {
         return jsonResponse(Array.from({ length: 100 }, (_, index) => githubComment(index + 1, `comment ${index + 1}`)));
@@ -115,6 +116,22 @@ describe("GitHubClient", () => {
     expect(await client.findComment("owner/repo", 1, "<!-- relunar-run:issue-1-test -->"))
       .toBe("https://github.com/owner/repo/issues/1#issuecomment-101");
     expect(requests.filter((url) => url.includes("/comments"))).toHaveLength(4);
+  });
+
+  test("ignores a publication marker spoofed by another user", async () => {
+    const fetchImpl = async (url: string | URL | Request) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === "/user") return jsonResponse({ login: "maintainer" });
+      return jsonResponse([{ ...githubComment(1, "<!-- relunar-run:issue-1-test -->"), user: { login: "someone-else" } }]);
+    };
+    expect(await new GitHubClient("token", fetchImpl as typeof fetch)
+      .findComment("owner/repo", 1, "<!-- relunar-run:issue-1-test -->")).toBeNull();
+  });
+
+  test("reads repository configuration through the contents API", async () => {
+    const fetchImpl = async () => jsonResponse({ encoding: "base64", content: Buffer.from("version: 1\n").toString("base64") });
+    expect(await new GitHubClient("token", fetchImpl as unknown as typeof fetch).getRepositoryFile("owner/repo", ".relunar.yml"))
+      .toBe("version: 1\n");
   });
   test("paginates issues and filters pull requests", async () => {
     const requests: string[] = [];

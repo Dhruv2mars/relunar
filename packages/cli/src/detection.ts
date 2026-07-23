@@ -4,8 +4,12 @@ import { join } from "node:path";
 export async function detectSandboxImage(cwd: string): Promise<string | undefined> {
   const devcontainer = await optionalRead(join(cwd, ".devcontainer", "devcontainer.json"));
   if (devcontainer) {
-    const match = /"image"\s*:\s*"((?:\\.|[^"\\])+)"/.exec(devcontainer);
-    if (match?.[1]) return JSON.parse(`"${match[1]}"`) as string;
+    try {
+      const parsed = JSON.parse(removeTrailingCommas(stripJsonComments(devcontainer))) as { image?: unknown };
+      if (typeof parsed.image === "string") return parsed.image;
+    } catch {
+      // Invalid devcontainer metadata should not prevent other toolchain detection.
+    }
   }
 
   const rust = await optionalRead(join(cwd, "rust-toolchain.toml")) ?? await optionalRead(join(cwd, "rust-toolchain"));
@@ -55,6 +59,42 @@ export async function detectSandboxImage(cwd: string): Promise<string | undefine
     }
   }
   return undefined;
+}
+
+function stripJsonComments(value: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index]!;
+    const next = value[index + 1];
+    if (inString) {
+      result += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      result += char;
+    } else if (char === "/" && next === "/") {
+      while (index < value.length && value[index] !== "\n") index += 1;
+      result += "\n";
+    } else if (char === "/" && next === "*") {
+      index += 2;
+      while (index < value.length && !(value[index] === "*" && value[index + 1] === "/")) {
+        if (value[index] === "\n") result += "\n";
+        index += 1;
+      }
+      index += 1;
+    } else result += char;
+  }
+  return result;
+}
+
+function removeTrailingCommas(value: string): string {
+  return value.replace(/,(\s*[}\]])/g, "$1");
 }
 
 function legacyVersion(value: string, minimumMajor: number, minimumMinor: number): boolean {
