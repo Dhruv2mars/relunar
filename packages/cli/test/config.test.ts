@@ -4,11 +4,20 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   defaultRelunarConfig,
+  isRepoSlug,
   linkRepo,
   parseRelunarConfig,
   readGlobalConfig,
   writeRelunarConfig,
 } from "../src/config";
+
+test("repository slug validation rejects clone-command injection", () => {
+  expect(isRepoSlug("owner/repo.name_test-1")).toBe(true);
+  expect(isRepoSlug("owner/repo;touch-pwned")).toBe(false);
+  expect(isRepoSlug("owner/$(touch-pwned)")).toBe(false);
+  expect(isRepoSlug("owner/repo.git")).toBe(false);
+  expect(isRepoSlug("owner/.hidden")).toBe(false);
+});
 
 describe("relunar config", () => {
   test("parses defaultable repo config", () => {

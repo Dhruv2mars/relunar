@@ -140,7 +140,12 @@ export const defaultRelunarConfig: RelunarConfig = {
 };
 
 export function isRepoSlug(value: unknown): value is RepoSlug {
-  return typeof value === "string" && /^[^/\s]+\/[^/\s]+$/.test(value);
+  return (
+    typeof value === "string" &&
+    /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]{1,100}$/.test(value) &&
+    !value.endsWith(".git") &&
+    !value.split("/")[1]?.startsWith(".")
+  );
 }
 
 export function parseRelunarConfig(raw: string): RelunarConfig {
