@@ -84,7 +84,7 @@ describe("release contract", () => {
       expect(help).toContain("Relunar CLI");
       expect(help).toContain("Agent workflow");
       expect(help).toContain("relunar repro start <issue-number>");
-      expect(help).toContain("relunar repro <issue-number> [--sync]");
+      expect(help).toContain("relunar repro <issue-number> --claim <issue-behavior> [--sync]");
       expect(help).toContain("relunar repro sync <run-id>");
       expect(help).toContain("relunar repro finish <run-id>");
     } finally {
@@ -104,7 +104,16 @@ describe("release contract", () => {
     expect(command).toContain("--yes");
   });
 
+  test("real E2E uses the distribution runtime and always cleans up", () => {
+    const smoke = readFileSync(join(repoRoot, "packages", "cli", "scripts", "e2e-smoke.mjs"), "utf8");
+    expect(smoke).toContain('const nodeBin = process.env.RELUNAR_E2E_NODE ?? "node"');
+    expect(smoke).not.toContain("execFileSync(process.execPath");
+    expect(smoke).toContain('["repro", "cleanup", report.runId]');
+    expect(smoke).toContain("bestEffortStop(activeRunId");
+  });
+
   test("release tag script prints package version tag", () => {
+    const rootPackageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
     const packageJson = JSON.parse(readFileSync(join(repoRoot, "packages", "cli", "package.json"), "utf8"));
     const output = execFileSync("node", ["scripts/release-tag.mjs", "--print"], {
       cwd: repoRoot,
@@ -112,6 +121,12 @@ describe("release contract", () => {
     }).trim();
 
     expect(output).toBe(`v${packageJson.version}`);
+    expect(rootPackageJson.scripts["release:tag"]).toContain("--print");
+    expect(rootPackageJson.scripts["release:tag:push"]).toContain("--push");
+    const script = readFileSync(join(repoRoot, "scripts", "release-tag.mjs"), "utf8");
+    expect(script).toContain('branch !== "main"');
+    expect(script).toContain('["fetch", "--quiet", "origin", "main"]');
+    expect(script).toContain('head !== remoteMain');
   });
 });
 

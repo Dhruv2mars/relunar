@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { agentNextStep, evidenceExcerpt, isFinalizedRepro, renderMarkdownReport } from "../src/reports";
+import {
+  agentNextStep,
+  evidenceExcerpt,
+  isFinalizedRepro,
+  renderMarkdownReport,
+} from "../src/reports";
 import type { RunReport } from "../src/types";
 
 function baseReport(overrides: Partial<RunReport> = {}): RunReport {
@@ -45,13 +50,16 @@ describe("reports", () => {
       baseReport({
         status: "blocked",
         summary: null,
-        failure: "Invalid .relunar.yml: sandbox.resources requires sandbox.image",
+        failure:
+          "Invalid .relunar.yml: sandbox.resources requires sandbox.image",
         commands: [],
       }),
       20,
     );
     expect(markdown).toContain("## Repro: Blocked");
-    expect(markdown).toContain("Invalid .relunar.yml: sandbox.resources requires sandbox.image");
+    expect(markdown).toContain(
+      "Invalid .relunar.yml: sandbox.resources requires sandbox.image",
+    );
   });
 
   test("renders maintainer markdown without harness slop", () => {
@@ -76,11 +84,33 @@ describe("reports", () => {
     const report = baseReport({
       runId: "issue-2-demo",
       status: "reproduced",
-      issue: { number: 2, title: "Crash", body: "Run repro.ts", state: "open", url: "https://github.com/owner/repo/issues/2" },
+      issue: {
+        number: 2,
+        title: "Crash",
+        body: "Run repro.ts",
+        state: "open",
+        url: "https://github.com/owner/repo/issues/2",
+      },
       sandbox: { provider: "daytona", id: "sandbox-2", target: "us" },
       commands: [
-        { name: "setup", command: "bun install", status: "passed", exitCode: 0, durationMs: 5, stdout: "ok", stderr: "" },
-        { name: "repro", command: "bun repro.ts", status: "failed", exitCode: 1, durationMs: 10, stdout: "crash dump noise", stderr: "Error: boom" },
+        {
+          name: "setup",
+          command: "bun install",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 5,
+          stdout: "ok",
+          stderr: "",
+        },
+        {
+          name: "repro",
+          command: "bun repro.ts",
+          status: "failed",
+          exitCode: 1,
+          durationMs: 10,
+          stdout: "crash dump noise",
+          stderr: "Error: boom",
+        },
       ],
       failure: null,
       summary: "Compiler crashes with supplied source.",
@@ -103,7 +133,9 @@ describe("reports", () => {
     expect(markdown).not.toContain("### Steps to reproduce");
     expect(markdown).not.toContain("bun install");
     expect(markdown).not.toContain("Evidence: issue-specific");
-    expect(isFinalizedRepro({ ...report, status: "environment_ready" })).toBe(false);
+    expect(isFinalizedRepro({ ...report, status: "environment_ready" })).toBe(
+      false,
+    );
     expect(isFinalizedRepro({ ...report, commands: [] })).toBe(false);
     expect(
       isFinalizedRepro({
@@ -119,8 +151,19 @@ describe("reports", () => {
     const report = baseReport({
       status: "reproduced",
       summary: "Parameter property newline still errors.",
-      reproSteps: "1. Save repro.ts\n2. Run `node built/local/tsc.js --noEmit repro.ts`",
-      commands: [{ name: "repro", command: "node tsc.js", status: "failed", exitCode: 2, durationMs: 10, stdout: "", stderr: "TS1005" }],
+      reproSteps:
+        "1. Save repro.ts\n2. Run `node built/local/tsc.js --noEmit repro.ts`",
+      commands: [
+        {
+          name: "repro",
+          command: "node tsc.js",
+          status: "failed",
+          exitCode: 2,
+          durationMs: 10,
+          stdout: "",
+          stderr: "TS1005",
+        },
+      ],
       failure: null,
     });
 
@@ -130,12 +173,161 @@ describe("reports", () => {
     expect(markdown).toContain("TS1005");
   });
 
+  test("renders machine verification, fingerprint, and collected artifacts", () => {
+    const report = baseReport({
+      status: "reproduced",
+      trust: "verified",
+      summary: "Crash signature matched three times.",
+      reproSteps: "1. Run repro",
+      observed: "TypeError",
+      expected: "No crash",
+      environmentNotes: "node project",
+      commands: Array.from({ length: 3 }, (_, index) => ({
+        name: "repro",
+        command: "node repro.js",
+        status: "failed" as const,
+        exitCode: 1,
+        durationMs: 5,
+        stdout: "",
+        stderr: "TypeError",
+        verification: {
+          verified: true,
+          passed: true,
+          attempt: index + 1,
+          totalAttempts: 3,
+          checks: [
+            {
+              kind: "stderr_matches" as const,
+              expected: "/TypeError/",
+              actual: "TypeError",
+              passed: true,
+            },
+          ],
+        },
+      })),
+      environment: {
+        os: "Linux",
+        architecture: "x86_64",
+        runtimes: { node: "v22.1.0" },
+        workingDirectory: "repo",
+        variableNames: ["CI"],
+        services: [],
+      },
+      artifacts: [
+        {
+          name: "artifacts.tar.gz",
+          remotePath: "/tmp/a",
+          localPath: "/tmp/local",
+          sizeBytes: 42,
+          sha256: "abc",
+        },
+      ],
+    });
+    const markdown = renderMarkdownReport(report, 20);
+    expect(markdown).toContain(
+      "Verification: **verified** — 3/3 machine checks matched",
+    );
+    expect(markdown).toContain("- `stderr_matches`: passed");
+    expect(markdown).toContain("- Runtime `node`: v22.1.0");
+    expect(markdown).toContain(
+      "- Collected: `artifacts/artifacts.tar.gz` (42 bytes, sha256 `abc`)",
+    );
+    expect(markdown).not.toContain("/tmp/local");
+  });
+
+  test("final report renders only explicitly selected evidence", () => {
+    const report = baseReport({
+      status: "not_reproduced",
+      trust: "verified",
+      selectedEvidenceIds: ["probe-claim"],
+      commands: [
+        {
+          name: "repro",
+          evidenceId: "probe-claim",
+          claim: "CLI exits 2",
+          command: "cli --version",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 1,
+          stdout: "cli 1.0",
+          stderr: "",
+          verification: {
+            verified: true,
+            passed: false,
+            attempt: 1,
+            totalAttempts: 1,
+            checks: [
+              { kind: "exit_code", expected: "2", actual: "0", passed: false },
+              {
+                kind: "stdout_matches",
+                expected: "/cli/",
+                actual: "cli 1.0",
+                passed: true,
+              },
+            ],
+          },
+        },
+        {
+          name: "repro",
+          evidenceId: "probe-healthy",
+          claim: "CLI exits 0",
+          command: "cli --version",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 1,
+          stdout: "cli 1.0",
+          stderr: "",
+          verification: {
+            verified: true,
+            passed: true,
+            attempt: 1,
+            totalAttempts: 1,
+            checks: [
+              { kind: "exit_code", expected: "0", actual: "0", passed: true },
+            ],
+          },
+        },
+      ],
+    });
+
+    const markdown = renderMarkdownReport(report, 20);
+    expect(markdown).toContain(
+      "Verification: **verified** — 1/2 machine checks matched",
+    );
+    expect(markdown).toContain("- `exit_code`: failed (expected `2`)");
+    expect(markdown).not.toContain("expected `0`");
+  });
+
   test("evidenceExcerpt prefers last failing repro output", () => {
     const excerpt = evidenceExcerpt(
       [
-        { name: "baseline", command: "bun test", status: "passed", exitCode: 0, durationMs: 1, stdout: "ok", stderr: "" },
-        { name: "repro", command: "first", status: "passed", exitCode: 0, durationMs: 1, stdout: "noop", stderr: "" },
-        { name: "repro", command: "second", status: "failed", exitCode: 1, durationMs: 1, stdout: "out", stderr: "err-signal" },
+        {
+          name: "baseline",
+          command: "bun test",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 1,
+          stdout: "ok",
+          stderr: "",
+        },
+        {
+          name: "repro",
+          command: "first",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 1,
+          stdout: "noop",
+          stderr: "",
+        },
+        {
+          name: "repro",
+          command: "second",
+          status: "failed",
+          exitCode: 1,
+          durationMs: 1,
+          stdout: "out",
+          stderr: "err-signal",
+        },
       ],
       10,
     );
@@ -148,23 +340,51 @@ describe("reports", () => {
     const ready = baseReport({
       runId: "issue-3-demo",
       status: "environment_ready",
-      issue: { number: 3, title: "Bug", body: "Reproduce with fixture", state: "open", url: "https://github.com/owner/repo/issues/3" },
+      issue: {
+        number: 3,
+        title: "Bug",
+        body: "Reproduce with fixture",
+        state: "open",
+        url: "https://github.com/owner/repo/issues/3",
+      },
       sandbox: { provider: "daytona", id: "sandbox-3", target: "us" },
-      commands: [{ name: "baseline", command: "bun test", status: "passed", exitCode: 0, durationMs: 5, stdout: "ok", stderr: "" }],
+      commands: [
+        {
+          name: "baseline",
+          command: "bun test",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 5,
+          stdout: "ok",
+          stderr: "",
+        },
+      ],
       failure: null,
       nextStep: "",
     });
 
     expect(agentNextStep(ready)).toContain("not reproduced");
     expect(agentNextStep(ready)).toContain("issue.body");
-    expect(renderMarkdownReport({ ...ready, nextStep: agentNextStep(ready) }, 20)).toContain("## Repro: Environment ready");
-    expect(renderMarkdownReport({ ...ready, nextStep: agentNextStep(ready) }, 20)).not.toContain("Next step:");
+    expect(
+      renderMarkdownReport({ ...ready, nextStep: agentNextStep(ready) }, 20),
+    ).toContain("## Repro: Environment ready");
+    expect(
+      renderMarkdownReport({ ...ready, nextStep: agentNextStep(ready) }, 20),
+    ).not.toContain("Next step:");
 
     const probed = {
       ...ready,
       commands: [
         ...ready.commands,
-        { name: "repro" as const, command: "bun repro.ts", status: "failed" as const, exitCode: 1, durationMs: 10, stdout: "crash", stderr: "" },
+        {
+          name: "repro" as const,
+          command: "bun repro.ts",
+          status: "failed" as const,
+          exitCode: 1,
+          durationMs: 10,
+          stdout: "crash",
+          stderr: "",
+        },
       ],
     };
     expect(agentNextStep(probed)).toContain("Probe evidence recorded");
@@ -185,17 +405,38 @@ describe("reports", () => {
       },
       repo: "Dhruv2mars/typescript-relunar-testbed",
       commit: "a8e129925",
-      sandbox: { provider: "daytona", id: "b1ea336e-4359-458c-a05e-f2f31b587e6a", target: "us" },
+      sandbox: {
+        provider: "daytona",
+        id: "b1ea336e-4359-458c-a05e-f2f31b587e6a",
+        target: "us",
+      },
       commands: [
-        { name: "setup", command: "bun install", status: "passed", exitCode: 0, durationMs: 1, stdout: "", stderr: "" },
-        { name: "baseline", command: "bun run build", status: "passed", exitCode: 0, durationMs: 1, stdout: "", stderr: "" },
+        {
+          name: "setup",
+          command: "bun install",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 1,
+          stdout: "",
+          stderr: "",
+        },
+        {
+          name: "baseline",
+          command: "bun run build",
+          status: "passed",
+          exitCode: 0,
+          durationMs: 1,
+          stdout: "",
+          stderr: "",
+        },
         {
           name: "repro",
           command: "bash -lc 'huge setup script…'",
           status: "passed",
           exitCode: 0,
           durationMs: 1,
-          stdout: "=== COMPILE ===\nrepro.ts(2,14): error TS1005: ',' expected.\nTSC_EXIT=2\n",
+          stdout:
+            "=== COMPILE ===\nrepro.ts(2,14): error TS1005: ',' expected.\nTSC_EXIT=2\n",
           stderr: "",
         },
       ],
@@ -220,7 +461,8 @@ describe("reports", () => {
         "```",
       ].join("\n"),
       observed: "repro.ts(2,14): error TS1005: ',' expected.\nTSC_EXIT=2",
-      expected: "Treat as a parameter property (or document that a newline after the modifier is invalid).",
+      expected:
+        "Treat as a parameter property (or document that a newline after the modifier is invalid).",
       environmentNotes: "tsc 6.0.0-dev (built/local)",
       nextStep: "Run finalized as reproduced. Sandbox disposed.",
     });

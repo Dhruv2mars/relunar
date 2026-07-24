@@ -2,6 +2,137 @@ import { describe, expect, test } from "bun:test";
 import { GitHubClient } from "../src/github";
 
 describe("GitHubClient", () => {
+  test("retries transient failures then succeeds", async () => {
+    let attempts = 0;
+    const fetchImpl = async () => {
+      attempts += 1;
+      if (attempts < 3)
+        return new Response("temporary", {
+          status: 503,
+          statusText: "Unavailable",
+        });
+      return new Response(JSON.stringify(githubIssue(7)), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new GitHubClient(
+      "token",
+      fetchImpl as unknown as typeof fetch,
+      { sleep: async () => undefined },
+    );
+    expect((await client.getIssue("owner/repo", 7)).number).toBe(7);
+    expect(attempts).toBe(3);
+  });
+
+  test("does not retry permanent client errors", async () => {
+    let attempts = 0;
+    const fetchImpl = async () => {
+      attempts += 1;
+      return new Response("bad", { status: 404, statusText: "Not Found" });
+    };
+    const client = new GitHubClient(
+      "token",
+      fetchImpl as unknown as typeof fetch,
+      { sleep: async () => undefined },
+    );
+    await expect(client.getIssue("owner/repo", 7)).rejects.toThrow(
+      "GitHub API 404",
+    );
+    expect(attempts).toBe(1);
+  });
+  test("does not retry comment creation after an ambiguous transient response", async () => {
+    let attempts = 0;
+    const client = new GitHubClient("token", (async () => {
+      attempts += 1;
+      return new Response("temporary", { status: 503, statusText: "Unavailable" });
+    }) as unknown as typeof fetch, { sleep: async () => undefined });
+    await expect(client.createComment("owner/repo", 7, "body")).rejects.toThrow("GitHub API 503");
+    expect(attempts).toBe(1);
+  });
+  test("fetches maintainer issue context including labels, comments, and attachments", async () => {
+    const fetchImpl = async (url: string | URL | Request) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/comments")) {
+        return jsonResponse([
+          {
+            user: { login: "maintainer" },
+            body: "Trace: https://example.com/trace.log",
+            created_at: "2026-01-02T00:00:00Z",
+            html_url: "https://github.com/o/r/issues/1#issuecomment-1",
+          },
+        ]);
+      }
+      return jsonResponse({
+        ...githubIssue(1),
+        labels: [{ name: "bug" }],
+        body: "Repro https://example.com/repro.ts",
+      });
+    };
+    const context = await new GitHubClient(
+      "token",
+      fetchImpl as typeof fetch,
+    ).getIssueContext("owner/repo", 1);
+    expect(context.labels).toEqual(["bug"]);
+    expect(context.comments?.[0]).toMatchObject({
+      author: "maintainer",
+      body: "Trace: https://example.com/trace.log",
+    });
+    expect(context.attachments).toEqual([
+      "https://example.com/repro.ts",
+      "https://example.com/trace.log",
+    ]);
+  });
+  test("ignores local service URLs and trims Markdown punctuation from attachments", async () => {
+    const fetchImpl = async (url: string | URL | Request) => {
+      const path = new URL(String(url)).pathname;
+      if (path.endsWith("/comments")) return jsonResponse([]);
+      return jsonResponse({
+        ...githubIssue(1),
+        body: "Use `http://127.0.0.1:4317/health`. Download https://example.com/repro.ts`.",
+      });
+    };
+    const context = await new GitHubClient(
+      "token",
+      fetchImpl as typeof fetch,
+    ).getIssueContext("owner/repo", 1);
+    expect(context.attachments).toEqual(["https://example.com/repro.ts"]);
+  });
+  test("paginates maintainer comments and finds markers on later pages", async () => {
+    const requests: string[] = [];
+    const fetchImpl = async (url: string | URL | Request) => {
+      const parsed = new URL(String(url));
+      requests.push(parsed.href);
+      if (parsed.pathname === "/user") return jsonResponse({ login: "maintainer" });
+      if (!parsed.pathname.endsWith("/comments")) return jsonResponse(githubIssue(1));
+      if (parsed.searchParams.get("page") === "1") {
+        return jsonResponse(Array.from({ length: 100 }, (_, index) => githubComment(index + 1, `comment ${index + 1}`)));
+      }
+      return jsonResponse([githubComment(101, "<!-- relunar-run:issue-1-test -->")]);
+    };
+    const client = new GitHubClient("token", fetchImpl as typeof fetch);
+    const context = await client.getIssueContext("owner/repo", 1);
+    expect(context.comments).toHaveLength(101);
+    expect(await client.findComment("owner/repo", 1, "<!-- relunar-run:issue-1-test -->"))
+      .toBe("https://github.com/owner/repo/issues/1#issuecomment-101");
+    expect(requests.filter((url) => url.includes("/comments"))).toHaveLength(4);
+  });
+
+  test("ignores a publication marker spoofed by another user", async () => {
+    const fetchImpl = async (url: string | URL | Request) => {
+      const parsed = new URL(String(url));
+      if (parsed.pathname === "/user") return jsonResponse({ login: "maintainer" });
+      return jsonResponse([{ ...githubComment(1, "<!-- relunar-run:issue-1-test -->"), user: { login: "someone-else" } }]);
+    };
+    expect(await new GitHubClient("token", fetchImpl as typeof fetch)
+      .findComment("owner/repo", 1, "<!-- relunar-run:issue-1-test -->")).toBeNull();
+  });
+
+  test("reads repository configuration through the contents API", async () => {
+    const fetchImpl = async () => jsonResponse({ encoding: "base64", content: Buffer.from("version: 1\n").toString("base64") });
+    expect(await new GitHubClient("token", fetchImpl as unknown as typeof fetch).getRepositoryFile("owner/repo", ".relunar.yml"))
+      .toBe("version: 1\n");
+  });
   test("paginates issues and filters pull requests", async () => {
     const requests: string[] = [];
     const fetchImpl = async (url: string | URL | Request) => {
@@ -23,9 +154,15 @@ describe("GitHubClient", () => {
       throw new Error(`unexpected url: ${href}`);
     };
 
-    const issues = await new GitHubClient("token", fetchImpl as typeof fetch).listIssues("owner/repo", "open");
+    const issues = await new GitHubClient(
+      "token",
+      fetchImpl as typeof fetch,
+    ).listIssues("owner/repo", "open");
 
-    expect(issues.map((issue) => issue.number)).toEqual([...Array.from({ length: 99 }, (_, index) => index + 1), 101]);
+    expect(issues.map((issue) => issue.number)).toEqual([
+      ...Array.from({ length: 99 }, (_, index) => index + 1),
+      101,
+    ]);
     expect(requests).toHaveLength(2);
     expect(requests[0]).toContain("per_page=100&page=1");
     expect(requests[1]).toContain("per_page=100&page=2");
@@ -36,10 +173,15 @@ describe("GitHubClient", () => {
     const fetchImpl = async (url: string | URL | Request) => {
       const href = String(url);
       requests.push(href);
-      return jsonResponse(Array.from({ length: 100 }, (_, index) => githubIssue(index + 1)));
+      return jsonResponse(
+        Array.from({ length: 100 }, (_, index) => githubIssue(index + 1)),
+      );
     };
 
-    const issues = await new GitHubClient("token", fetchImpl as typeof fetch).listIssues("owner/repo", "open", { limit: 3 });
+    const issues = await new GitHubClient(
+      "token",
+      fetchImpl as typeof fetch,
+    ).listIssues("owner/repo", "open", { limit: 3 });
 
     expect(issues.map((issue) => issue.number)).toEqual([1, 2, 3]);
     expect(requests).toHaveLength(1);
@@ -53,6 +195,14 @@ function githubIssue(number: number) {
     body: `Body ${number}`,
     state: "open",
     html_url: `https://github.com/owner/repo/issues/${number}`,
+  };
+}
+
+function githubComment(number: number, body: string) {
+  return {
+    user: { login: "maintainer" }, body,
+    created_at: "2026-01-02T00:00:00Z",
+    html_url: `https://github.com/owner/repo/issues/1#issuecomment-${number}`,
   };
 }
 

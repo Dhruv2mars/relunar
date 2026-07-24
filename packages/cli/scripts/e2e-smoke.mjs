@@ -8,18 +8,28 @@ import { fileURLToPath } from "node:url";
 const cliRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const cliBin = join(cliRoot, "dist", "index.js");
 const cliSource = join(cliRoot, "src", "index.ts");
+const nodeBin = process.env.RELUNAR_E2E_NODE ?? "node";
 const repo = process.env.RELUNAR_E2E_REPO ?? "Dhruv2mars/relunar";
 const issue = process.env.RELUNAR_E2E_ISSUE ?? "14";
-const commandTimeoutSeconds = parsePositiveInteger(process.env.RELUNAR_E2E_COMMAND_TIMEOUT_SECONDS ?? "900");
+const commandTimeoutSeconds = parsePositiveInteger(
+  process.env.RELUNAR_E2E_COMMAND_TIMEOUT_SECONDS ?? "900",
+);
 const daytonaApiKey = process.env.RELUNAR_DAYTONA_API_KEY;
-const githubToken = process.env.RELUNAR_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+const githubToken =
+  process.env.RELUNAR_GITHUB_TOKEN ??
+  process.env.GITHUB_TOKEN ??
+  process.env.GH_TOKEN;
 
 if (!daytonaApiKey) {
-  fail("RELUNAR_DAYTONA_API_KEY is required for the real Daytona E2E smoke test.");
+  fail(
+    "RELUNAR_DAYTONA_API_KEY is required for the real Daytona E2E smoke test.",
+  );
 }
 
 if (!githubToken) {
-  fail("RELUNAR_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN is required for the real GitHub E2E smoke test.");
+  fail(
+    "RELUNAR_GITHUB_TOKEN, GITHUB_TOKEN, or GH_TOKEN is required for the real GitHub E2E smoke test.",
+  );
 }
 
 if (existsSync(cliSource)) {
@@ -29,6 +39,8 @@ if (existsSync(cliSource)) {
 }
 
 const temp = mkdtempSync(join(tmpdir(), "relunar-e2e-"));
+let activeRunId = null;
+let runFinalized = false;
 const userEnv = {
   ...process.env,
   XDG_CONFIG_HOME: join(temp, "config"),
@@ -50,38 +62,92 @@ try {
   assertCheck(doctor, "daytona auth");
   assertCheck(doctor, ".relunar.yml");
 
-  const issues = JSON.parse(run(["issues", "list", "--state", "all", "--limit", "1", "--json"]));
+  const issues = JSON.parse(
+    run(["issues", "list", "--state", "all", "--limit", "1", "--json"]),
+  );
   if (!Array.isArray(issues)) {
     fail("issues list did not return an array.");
   }
 
   const started = JSON.parse(run(["repro", "start", issue]));
+  activeRunId = started.runId;
   if (started.status !== "environment_ready") {
     fail(renderReproFailure(started));
   }
   if (!started.sandbox?.id) {
     fail("repro did not record a Daytona sandbox id.");
   }
-  if (!Array.isArray(started.commands) || !started.commands.some((command) => command.name === "clone")) {
+  if (
+    !Array.isArray(started.commands) ||
+    !started.commands.some((command) => command.name === "clone")
+  ) {
     fail("repro did not run the clone command.");
   }
-  const executed = JSON.parse(run(["repro", "exec", started.runId, "--", "test", "-f", "package.json"]));
-  if (!executed.commands.some((command) => command.name === "repro" && command.status === "passed")) {
-    fail("repro did not record issue-specific command evidence.");
+  const executed = JSON.parse(
+    run([
+      "repro",
+      "exec",
+      started.runId,
+      "--claim",
+      "repository package manifest is missing",
+      "--expect-exit",
+      "1",
+      "--",
+      "test",
+      "-f",
+      "package.json",
+    ]),
+  );
+  const evidence = executed.commands.find(
+    (command) =>
+      command.name === "repro" &&
+      command.evidenceId &&
+      command.verification?.verified,
+  );
+  if (!evidence || evidence.verification.passed !== false) {
+    fail("repro did not record a verified assertion mismatch.");
   }
-  const report = JSON.parse(run(["repro", "finish", started.runId, "--outcome", "not-reproduced", "--summary", "Lifecycle smoke command passed."]));
+  const report = JSON.parse(
+    run([
+      "repro",
+      "finish",
+      started.runId,
+      "--outcome",
+      "not-reproduced",
+      "--evidence",
+      evidence.evidenceId,
+      "--summary",
+      "The package manifest was present, so the smoke claim did not reproduce.",
+      "--repro-steps",
+      "Checked for package.json in the configured repository workdir.",
+      "--observed",
+      "The file existed and the command exited 0.",
+      "--expected",
+      "The smoke claim expected the file check to exit 1.",
+      "--environment",
+      "Real GitHub repository in a Daytona Linux sandbox.",
+    ]),
+  );
+  runFinalized = report.status !== "environment_ready";
   if (report.status !== "not_reproduced") {
     fail(renderReproFailure(report));
   }
 
+  const cleaned = JSON.parse(run(["repro", "cleanup", report.runId]));
+  if (cleaned.cleanup?.status !== "completed") {
+    fail(`repro cleanup did not complete: ${cleaned.cleanup?.error ?? "unknown failure"}`);
+  }
+  activeRunId = null;
+
   console.log(`E2E passed: ${report.runId} ${report.status} ${repo}#${issue}`);
 } finally {
+  if (activeRunId) bestEffortStop(activeRunId, runFinalized ? "cleanup" : "abort");
   rmSync(temp, { recursive: true, force: true });
 }
 
 function run(args) {
   try {
-    return execFileSync(process.execPath, [cliBin, ...args], {
+    return execFileSync(nodeBin, [cliBin, ...args], {
       cwd: temp,
       env: userEnv,
       encoding: "utf8",
@@ -138,7 +204,10 @@ function parsePositiveInteger(value) {
 
 function renderReproFailure(report) {
   const failed = Array.isArray(report.commands)
-    ? report.commands.find((command) => command.status === "failed" || command.status === "timed_out")
+    ? report.commands.find(
+        (command) =>
+          command.status === "failed" || command.status === "timed_out",
+      )
     : null;
   const lines = [
     `repro did not pass: ${report.status}`,
@@ -147,7 +216,10 @@ function renderReproFailure(report) {
   if (failed) {
     lines.push(`failed command: ${failed.name} ${failed.command}`);
     lines.push(`exitCode: ${failed.exitCode ?? "null"}`);
-    const output = [failed.stderr, failed.stdout].filter(Boolean).join("\n").trim();
+    const output = [failed.stderr, failed.stdout]
+      .filter(Boolean)
+      .join("\n")
+      .trim();
     if (output) {
       lines.push("output:");
       lines.push(output.split("\n").slice(-40).join("\n"));
@@ -157,6 +229,18 @@ function renderReproFailure(report) {
 }
 
 function fail(message) {
-  console.error(message);
-  process.exit(1);
+  throw new Error(message);
+}
+
+function bestEffortStop(runId, action) {
+  try {
+    execFileSync(nodeBin, [cliBin, "repro", action, runId], {
+      cwd: temp,
+      env: userEnv,
+      stdio: "ignore",
+      timeout: 120_000,
+    });
+  } catch {
+    console.error(`warning: failed to ${action} sandbox for ${runId}`);
+  }
 }

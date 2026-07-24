@@ -21,11 +21,11 @@ Command details live in [`reference.md`](reference.md) and `relunar <cmd> --help
 
 ## Leading words
 
-| Word | Means |
-|------|--------|
-| **Relunar** | The CLI harness — sandboxes, logs, reports, optional GitHub comments |
-| **harness** | Deterministic plumbing; you supply judgment |
-| **Evidence** | Issue-specific probe output that supports an outcome (setup/baseline alone is not Evidence) |
+| Word                 | Means                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| **Relunar**          | The CLI harness — sandboxes, logs, reports, optional GitHub comments                            |
+| **harness**          | Deterministic plumbing; you supply judgment                                                     |
+| **Evidence**         | Issue-specific probe plus explicit machine assertions; output alone is not verified proof       |
 | **Finish narrative** | Maintainer-useful `--summary` / `--repro-steps` / `--observed` / `--expected` / `--environment` |
 
 `environment_ready` ≠ reproduced. Always probe.
@@ -55,13 +55,15 @@ relunar issues list --state open --limit 20 --json
 For each issue number `N`:
 
 1. **Start** — `relunar repro start N` (or one-shot `relunar repro N -- <probe>`). Sandbox ready ≠ Evidence.
-2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload`), then `repro exec` / one-shot probes until you have issue-specific Evidence (or a clear block).
-3. **Inspect** — `relunar runs show <run-id> --json` when deciding the outcome.
-4. **Finish** — exactly one outcome: `reproduced` | `not-reproduced` | `blocked`. Finish rejects soft claims (e.g. a passing empty probe for `reproduced`).
+2. **Probe** — sync dirty local edits (`repro sync` / `--sync`), upload scripts if needed (`repro upload <run-id> <local> <repo-relative-path>`), then run issue-specific probes with `--claim` plus at least one assertion such as `--expect-exit`, `--output-match`, or `--file-exists`. Upload destinations and probe commands are relative to the configured repository workdir; never prefix them with `repo/` or guess the provider's absolute checkout path. Record the returned evidence ID. Use `--repeat` for flaky claims and a control command when causal isolation matters.
+   Pass executable arguments directly after `--`. When a probe needs pipes, redirects, expansion, or multiple shell statements, use `-- bash -c '<script>'`; avoid login shells because they can replace the sandbox toolchain `PATH`, and never quote the whole script as a single executable argument.
+3. **Inspect** — use the evidence ID returned by `repro exec`. Before finishing, run `relunar repro evidence <run-id> --json` to list the exact selectable IDs and assertion status; use `relunar runs show <run-id> --json` only when you need the complete record.
+4. **Finish** — exactly one outcome: `reproduced` when the asserted issue behavior matches; `not-reproduced` when an assertion for the issue behavior was evaluated and did not match; `blocked` when required inputs or environment cannot be obtained. Issue type (`bug` versus `enhancement`) does not determine outcome. `reproduced` and `not-reproduced` require machine-checked Evidence; `blocked` may omit `--evidence`, but must name the concrete missing prerequisite. Never use `--skip-evidence-gates` for a publishable result.
 
 ```sh
 relunar repro finish <run-id> \
   --outcome <reproduced|not-reproduced|blocked> \
+  --evidence probe-1 \
   --summary "…" \
   --repro-steps "…" \
   --observed "…" \
@@ -70,7 +72,9 @@ relunar repro finish <run-id> \
   --comment   # only when posting to GitHub
 ```
 
-**Done when (per issue):** `repro finish` succeeded with an outcome **and** a Finish narrative whose `--summary` a maintainer can act on; when commenting, `--repro-steps` / `--observed` / `--expected` / `--environment` are filled from Evidence (not harness dumps). Abort only if the run must be discarded — then start a fresh lifecycle for that issue.
+Omit `--evidence` only for `blocked` when no relevant probe can run. Never call `repro cleanup` after a failed finish; correct the finish command while the sandbox remains recoverable. Cleanup only after finish succeeds or when intentionally aborting.
+
+**Done when (per issue):** `repro finish` succeeded with an outcome and all four narrative fields filled from Evidence. Preview with `relunar repro comment preview <run-id>`. Post only when requested; retry safely with `relunar repro comment post <run-id>`. Run `relunar repro cleanup <run-id>` after a preview-only finish or a successful retry.
 
 ### 4. Report back
 

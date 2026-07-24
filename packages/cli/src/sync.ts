@@ -85,6 +85,9 @@ async function uploadAndExtract(options: SyncOptions, files: string[]): Promise<
     // Null-terminated + --null keeps dash-leading paths (e.g. --help.txt) verbatim.
     await writeFile(listPath, `${files.join("\0")}\0`, "utf8");
     await execFileAsync("tar", ["-czf", archivePath, "-C", options.cwd, "--null", "-T", listPath], {
+      // macOS tar otherwise emits AppleDouble `._*` metadata entries for files
+      // with extended attributes, polluting Linux sandboxes during extraction.
+      env: { ...process.env, COPYFILE_DISABLE: "1" },
       maxBuffer: 32 * 1024 * 1024,
     });
     const { size } = await stat(archivePath);

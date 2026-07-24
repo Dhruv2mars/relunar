@@ -4,6 +4,7 @@ export type EvidenceGateOptions = {
   skip?: boolean | undefined;
   sandbox?: SandboxSession | undefined;
   timeoutSeconds?: number | undefined;
+  evidenceIds?: string[] | undefined;
 };
 
 /** Enforce outcome-scoped evidence gates before finish finalizes a run. */
@@ -18,10 +19,43 @@ export async function assertEvidenceGates(
   }
 
   const gate = resolveGate(outcome, config);
-  const reproCommands = report.commands.filter((command) => command.name === "repro");
+  const selectedIds = options.evidenceIds;
+  const selected = selectedIds?.length
+    ? report.commands.filter((command) => command.evidenceId && selectedIds.includes(command.evidenceId))
+    : report.commands;
+  if (selectedIds?.length && selectedIds.some((id) => !selected.some((command) => command.evidenceId === id))) {
+    throw new Error("Evidence gate failed: selected evidence was not found in this run.");
+  }
+  const reproCommands = selected.filter((command) => command.name === "repro");
+  const controlCommands = selected.filter((command) => command.name === "control");
 
   if (gate.requireReproCommand !== false && reproCommands.length === 0) {
     throw new Error("Cannot finish repro without issue-specific command evidence.");
+  }
+
+  const verified = reproCommands.filter((command) => command.verification?.verified === true);
+  const passed = verified.filter((command) => command.verification?.passed === true);
+  if (outcome === "reproduced") {
+    if (selectedIds?.length && reproCommands.some((command) => !command.claim?.trim())) {
+      throw new Error("Evidence gate failed: reproduced evidence requires an issue-behavior claim.");
+    }
+    if (controlCommands.some((command) => command.verification?.verified !== true || command.verification.passed !== true)) {
+      throw new Error("Evidence gate failed: control assertion did not pass.");
+    }
+    if (passed.length === 0) throw new Error("Evidence gate failed: reproduced requires a verified passing probe assertion.");
+    const total = verified.at(-1)?.verification?.totalAttempts ?? 1;
+    const latestSeries = verified.slice(-total);
+    if (latestSeries.length !== total || latestSeries.some((command) => command.verification?.passed !== true)) {
+      throw new Error(`Evidence gate failed: reproduced requires all ${total} repeated probe assertions to pass.`);
+    }
+  }
+  if (outcome === "not_reproduced") {
+    if (verified.length === 0) {
+      throw new Error("Evidence gate failed: not-reproduced requires an evaluated probe assertion.");
+    }
+    if (passed.length > 0) {
+      throw new Error("Evidence gate failed: not-reproduced conflicts with a passing probe assertion.");
+    }
   }
 
   if (gate.requireNonZeroExit && !reproCommands.some((command) => isFailureSignal(command))) {
@@ -78,8 +112,7 @@ function resolveGate(outcome: ReproOutcome, config: RelunarConfig): EvidenceGate
     return {
       requireReproCommand: true,
       ...configured,
-      // Default: failure/timeout or captured text (Daytona may collapse stderr).
-      requireProbeSignal: configured.requireProbeSignal ?? (hasExplicitSignalGate ? false : true),
+      requireProbeSignal: configured.requireProbeSignal ?? false,
     };
   }
   if (outcome === "not_reproduced") {

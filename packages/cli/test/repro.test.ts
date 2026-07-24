@@ -65,7 +65,8 @@ describe("repro runner", () => {
 
       expect(report.status).toBe("baseline_failed");
       expect(report.failure).toBe("bun test failed");
-      expect(sandbox.commands).toHaveLength(4);
+      expect(sandbox.commands).toHaveLength(6);
+      expect(sandbox.commands.filter((command) => command === "git rev-parse HEAD")).toHaveLength(2);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -101,7 +102,7 @@ describe("repro runner", () => {
         "npm run test:ci",
       ]);
       expect(sandbox.commands).not.toContain("test -f .relunar.yml && cat .relunar.yml || true");
-      expect(sandbox.calls.map((call) => call.timeoutSeconds)).toEqual([900, 900, 900, 900]);
+      expect(sandbox.calls.map((call) => call.timeoutSeconds)).toEqual([900, 900, 900, 900, 900, 900]);
 
       const raw = await readFile(join(cwd, ".relunar", "runs", report.runId, "report.json"), "utf8");
       expect(JSON.parse(raw).commands[1].stdout).toBe("installed");
@@ -126,6 +127,7 @@ describe("repro runner", () => {
       let requestedImage: string | undefined;
       let requestedResources: SandboxResources | undefined;
       let requestedAutoStop: number | undefined;
+      let requestedTimeout: number | undefined;
 
       await runRepro({
         cwd,
@@ -137,6 +139,7 @@ describe("repro runner", () => {
             requestedImage = input.image;
             requestedResources = input.resources;
             requestedAutoStop = input.autoStopMinutes;
+            requestedTimeout = input.timeoutSeconds;
             return sandbox;
           },
           resumeSandbox: async () => sandbox,
@@ -146,6 +149,31 @@ describe("repro runner", () => {
       expect(requestedImage).toBe("node:22-bookworm");
       expect(requestedResources).toEqual({ cpu: 4, memory: 8, disk: 20 });
       expect(requestedAutoStop).toBe(60);
+      expect(requestedTimeout).toBe(300);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("redacts passthrough secrets without corrupting ordinary environment values", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "relunar-repro-redaction-"));
+    try {
+      await writeFile(join(cwd, ".relunar.yml"), [
+        "version: 1", "environment:", "  variables:", "    CI: 'true'",
+        "  passthrough:", "    - TEST_SECRET", "setup:", "  - echo true secret-value",
+        "baseline: []", "",
+      ].join("\n"), "utf8");
+      const sandbox = new FakeSandbox([
+        { match: "git clone", result: ok("") },
+        { match: "git rev-parse", result: ok("abc123\n") },
+        { match: "echo true", result: ok("true secret-value") },
+      ]);
+      const report = await runRepro({
+        cwd, repo: "owner/repo", issue: sampleIssue(), githubToken: "secret-token",
+        hostEnv: { TEST_SECRET: "secret-value" }, sandboxProvider: provider(sandbox),
+      });
+      expect(report.commands[1]?.command).toBe("echo true [redacted]");
+      expect(report.commands[1]?.stdout).toBe("true [redacted]");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

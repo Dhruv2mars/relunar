@@ -4,7 +4,10 @@ import type { CommandEvidence, RunReport } from "./types";
  * Maintainer-facing markdown for report.md and `--comment`.
  * Agent machinery (nextStep, full issue body, setup dumps, sandbox IDs) stays in report.json.
  */
-export function renderMarkdownReport(report: RunReport, maxLogLines: number): string {
+export function renderMarkdownReport(
+  report: RunReport,
+  maxLogLines: number,
+): string {
   const lines: string[] = [`## Repro: ${formatStatus(report.status)}`, ""];
 
   if (report.summary?.trim()) {
@@ -16,12 +19,33 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
     lines.push(statusBlurb(report), "");
   }
 
+  const evidenceCommands = selectedEvidenceCommands(report);
+  if (report.trust) {
+    const checks = evidenceCommands.flatMap(
+      (command) => command.verification?.checks ?? [],
+    );
+    const passed = checks.filter((check) => check.passed).length;
+    lines.push(
+      `Verification: **${report.trust}**${checks.length > 0 ? ` — ${passed}/${checks.length} machine checks matched` : ""}`,
+      "",
+    );
+    if (checks.length > 0) {
+      lines.push("### Machine checks", "");
+      for (const check of checks)
+        lines.push(
+          `- \`${check.kind}\`: ${check.passed ? "passed" : "failed"} (expected ${inline(check.expected)})`,
+        );
+      lines.push("");
+    }
+  }
+
   const reproSteps = report.reproSteps?.trim();
   if (reproSteps) {
     lines.push("### Steps to reproduce", "", reproSteps, "");
   }
 
-  const observed = report.observed?.trim() || evidenceExcerpt(report.commands, maxLogLines);
+  const observed =
+    report.observed?.trim() || evidenceExcerpt(report.commands, maxLogLines);
   if (observed) {
     lines.push("### Observed", "", fenced(observed), "");
   }
@@ -32,7 +56,9 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
   }
 
   lines.push("### Environment", "");
-  lines.push(`- Repo: \`${report.repo}\`${report.commit ? ` @ \`${report.commit}\`` : ""}`);
+  lines.push(
+    `- Repo: \`${report.repo}\`${report.commit ? ` @ \`${report.commit}\`` : ""}`,
+  );
   const environmentNotes = report.environmentNotes?.trim();
   if (environmentNotes) {
     for (const note of environmentNotes.split("\n")) {
@@ -42,14 +68,46 @@ export function renderMarkdownReport(report: RunReport, maxLogLines: number): st
       }
     }
   }
+  if (report.environment) {
+    lines.push(
+      `- Platform: ${report.environment.os} ${report.environment.architecture}`,
+    );
+    lines.push(
+      `- Working directory: \`${report.environment.workingDirectory}\``,
+    );
+    for (const [runtime, version] of Object.entries(
+      report.environment.runtimes,
+    )) {
+      lines.push(`- Runtime \`${runtime}\`: ${version}`);
+    }
+    if (report.environment.services.length > 0)
+      lines.push(`- Services: ${report.environment.services.join(", ")}`);
+  }
   lines.push("");
 
   lines.push(`Artifacts: \`.relunar/runs/${report.runId}\``);
+  for (const artifact of report.artifacts ?? []) {
+    lines.push(
+      `- Collected: \`artifacts/${artifact.name}\` (${artifact.sizeBytes} bytes, sha256 \`${artifact.sha256}\`)`,
+    );
+  }
   return `${lines.join("\n")}\n`;
 }
 
+function selectedEvidenceCommands(report: RunReport): CommandEvidence[] {
+  if (!report.selectedEvidenceIds?.length) return report.commands;
+  const selected = new Set(report.selectedEvidenceIds);
+  return report.commands.filter(
+    (command) => command.evidenceId && selected.has(command.evidenceId),
+  );
+}
+
 export function isFinalizedRepro(report: RunReport): boolean {
-  if (report.status !== "reproduced" && report.status !== "not_reproduced" && report.status !== "blocked") {
+  if (
+    report.status !== "reproduced" &&
+    report.status !== "not_reproduced" &&
+    report.status !== "blocked"
+  ) {
     return false;
   }
   if (!report.summary?.trim()) {
@@ -70,9 +128,9 @@ export function agentNextStep(report: RunReport): string {
   switch (report.status) {
     case "environment_ready":
       if (hasIssueProbeEvidence(report)) {
-        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --summary <text>\` (optional: --repro-steps, --observed, --expected, --environment).`;
+        return `Probe evidence recorded (status is still environment_ready, not a final outcome). Run more probes with \`relunar repro exec ${report.runId} --claim <issue-behavior> -- <command>\`, or finish with \`relunar repro finish ${report.runId} --outcome reproduced|not-reproduced|blocked --evidence probe-N --summary <text>\`. Reproduced and not-reproduced outcomes also require --repro-steps, --observed, --expected, and --environment.`;
       }
-      return `Environment ready only — not reproduced. Read issue.body, plan probes, then \`relunar repro exec ${report.runId} -- <command>\` (or \`relunar repro ${report.issue.number} -- <command>\`). Finish only after probe evidence with --outcome and --summary.`;
+      return `Environment ready only — not reproduced. Read issue.body, plan probes, then \`relunar repro exec ${report.runId} --claim <issue-behavior> -- <command>\` (or \`relunar repro ${report.issue.number} --claim <issue-behavior> -- <command>\`). Finish only after selecting claim-linked evidence with --evidence.`;
     case "passed":
       return "Legacy dispose-on-ready run completed baseline only. Prefer `relunar repro start` and keep the sandbox warm for probes.";
     case "setup_failed":
@@ -100,7 +158,11 @@ export function redactSecret(value: string, secret: string | null): string {
 }
 
 function isFinalOutcome(status: RunReport["status"]): boolean {
-  return status === "reproduced" || status === "not_reproduced" || status === "blocked";
+  return (
+    status === "reproduced" ||
+    status === "not_reproduced" ||
+    status === "blocked"
+  );
 }
 
 function statusBlurb(report: RunReport): string {
@@ -147,20 +209,36 @@ function formatStatus(status: RunReport["status"]): string {
 }
 
 /** Prefer agent-supplied observed text; else last repro (or failing) command output, trimmed. */
-export function evidenceExcerpt(commands: CommandEvidence[], maxLogLines: number): string | null {
+export function evidenceExcerpt(
+  commands: CommandEvidence[],
+  maxLogLines: number,
+): string | null {
   const reproCommands = commands.filter((command) => command.name === "repro");
   const preferred =
-    [...reproCommands].reverse().find((command) => command.status === "failed" || command.status === "timed_out") ??
+    [...reproCommands]
+      .reverse()
+      .find(
+        (command) =>
+          command.status === "failed" || command.status === "timed_out",
+      ) ??
     reproCommands.at(-1) ??
-    commands.find((command) => command.status === "failed" || command.status === "timed_out");
+    commands.find(
+      (command) =>
+        command.status === "failed" || command.status === "timed_out",
+    );
 
   if (!preferred) {
     return null;
   }
 
-  const output = [preferred.stderr, preferred.stdout].filter(Boolean).join("\n").trim();
+  const output = [preferred.stderr, preferred.stdout]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
   if (!output) {
-    return preferred.status === "passed" ? null : "Command failed with no output.";
+    return preferred.status === "passed"
+      ? null
+      : "Command failed with no output.";
   }
 
   return trimLog(output, maxLogLines);
@@ -176,4 +254,8 @@ function trimLog(output: string, maxLogLines: number): string {
 
 function fenced(value: string): string {
   return `\`\`\`txt\n${value}\n\`\`\``;
+}
+
+function inline(value: string): string {
+  return `\`${value.replaceAll("`", "\\`")}\``;
 }

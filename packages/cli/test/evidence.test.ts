@@ -16,7 +16,7 @@ describe("evidence gates", () => {
         stderr: "",
       },
     ]);
-    await expect(assertEvidenceGates(report, "reproduced", defaultRelunarConfig)).rejects.toThrow("fail, time out, or produce output");
+    await expect(assertEvidenceGates(report, "reproduced", defaultRelunarConfig)).rejects.toThrow("verified passing probe assertion");
   });
 
   test("reproduced accepts failing probe with output", async () => {
@@ -30,7 +30,7 @@ describe("evidence gates", () => {
         stdout: "",
         stderr: "unrecognized flag",
       },
-    ]);
+    ], true);
     await assertEvidenceGates(report, "reproduced", defaultRelunarConfig);
   });
 
@@ -45,7 +45,7 @@ describe("evidence gates", () => {
         stdout: "",
         stderr: "",
       },
-    ]);
+    ], true);
     await assertEvidenceGates(report, "reproduced", defaultRelunarConfig);
   });
 
@@ -68,7 +68,7 @@ describe("evidence gates", () => {
         stdout: "",
         stderr: "",
       },
-    ]);
+    ], true);
     await expect(assertEvidenceGates(report, "reproduced", config)).rejects.toThrow("stdout or stderr");
   });
 
@@ -91,7 +91,7 @@ describe("evidence gates", () => {
         stdout: "bug",
         stderr: "",
       },
-    ]);
+    ], true);
     await expect(assertEvidenceGates(report, "reproduced", config)).rejects.toThrow("failing or timed-out");
   });
 
@@ -114,7 +114,7 @@ describe("evidence gates", () => {
         stdout: "thread panicked at src/lib.rs",
         stderr: "",
       },
-    ]);
+    ], true);
     await assertEvidenceGates(report, "reproduced", config);
   });
 
@@ -138,7 +138,7 @@ describe("evidence gates", () => {
         stdout: "ERROR: boom",
         stderr: "",
       },
-    ]);
+    ], true);
     await assertEvidenceGates(report, "reproduced", config);
   });
 
@@ -151,9 +151,69 @@ describe("evidence gates", () => {
     const report = baseReport([]);
     await assertEvidenceGates(report, "blocked", defaultRelunarConfig);
   });
+
+  test("reproduced rejects partially matching repeated probe series", async () => {
+    const commands: RunReport["commands"] = [true, false, true].map((passed, index) => ({
+      name: "repro",
+      command: "probe",
+      status: "passed",
+      exitCode: 0,
+      durationMs: 1,
+      stdout: "signal",
+      stderr: "",
+      verification: {
+        verified: true,
+        passed,
+        attempt: index + 1,
+        totalAttempts: 3,
+        checks: [{ kind: "output_matches", expected: "/signal/", actual: "signal", passed }],
+      },
+    }));
+    await expect(assertEvidenceGates(baseReport(commands), "reproduced", defaultRelunarConfig)).rejects.toThrow("all 3 repeated probe assertions");
+  });
+
+  test("evaluates only explicitly selected claim-linked evidence", async () => {
+    const report = baseReport([
+      verifiedProbe("probe-1", "Issue crashes on empty config", true, "TypeError: empty config"),
+      verifiedProbe("probe-2", "Generic environment diagnostic", true, "PROBE_COMPLETE"),
+    ]);
+
+    await assertEvidenceGates(report, "reproduced", defaultRelunarConfig, { evidenceIds: ["probe-1"] });
+    await expect(
+      assertEvidenceGates(report, "reproduced", defaultRelunarConfig, { evidenceIds: ["missing"] }),
+    ).rejects.toThrow("selected evidence was not found");
+  });
+
+  test("rejects reproduced evidence without an issue-behavior claim", async () => {
+    const command = verifiedProbe("probe-1", "", true, "signal");
+    await expect(
+      assertEvidenceGates(baseReport([command]), "reproduced", defaultRelunarConfig, { evidenceIds: ["probe-1"] }),
+    ).rejects.toThrow("issue-behavior claim");
+  });
 });
 
-function baseReport(commands: RunReport["commands"]): RunReport {
+function verifiedProbe(evidenceId: string, claim: string, passed: boolean, stdout: string): RunReport["commands"][number] {
+  return {
+    name: "repro",
+    evidenceId,
+    claim,
+    command: "probe",
+    status: "passed",
+    exitCode: 0,
+    durationMs: 1,
+    stdout,
+    stderr: "",
+    verification: {
+      verified: true,
+      passed,
+      attempt: 1,
+      totalAttempts: 1,
+      checks: [{ kind: "output_matches", expected: "/signal/", actual: stdout, passed }],
+    },
+  };
+}
+
+function baseReport(commands: RunReport["commands"], verified = false): RunReport {
   return {
     runId: "issue-1-test",
     status: "environment_ready",
@@ -167,7 +227,18 @@ function baseReport(commands: RunReport["commands"]): RunReport {
     repo: "owner/repo",
     commit: "abc",
     sandbox: { provider: "daytona", id: "sb", target: "test" },
-    commands,
+    commands: commands.map((command) => verified && command.name === "repro"
+      ? {
+          ...command,
+          verification: {
+            verified: true,
+            passed: true,
+            attempt: 1,
+            totalAttempts: 1,
+            checks: [{ kind: "exit_code", expected: String(command.exitCode), actual: String(command.exitCode), passed: true }],
+          },
+        }
+      : command),
     failure: null,
     summary: null,
     reproSteps: null,

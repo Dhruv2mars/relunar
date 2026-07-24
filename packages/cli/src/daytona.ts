@@ -2,6 +2,8 @@ import { CodeLanguage, Daytona, type DaytonaConfig } from "@daytona/sdk";
 import { DEFAULT_AUTO_STOP_MINUTES } from "./config";
 import type { CreateSandboxInput, SandboxProvider, SandboxSession } from "./types";
 
+const MIN_LIFECYCLE_TIMEOUT_SECONDS = 300;
+
 export type DaytonaProviderOptions = {
   apiKey: string;
   apiUrl?: string | undefined;
@@ -27,9 +29,12 @@ export class DaytonaSandboxProvider implements SandboxProvider {
 
   async createSandbox(input: CreateSandboxInput): Promise<SandboxSession> {
     const autoStopInterval = input.autoStopMinutes ?? DEFAULT_AUTO_STOP_MINUTES;
+    const lifecycleTimeout = resolveSandboxLifecycleTimeout(input.timeoutSeconds);
     const sandbox = await this.daytona.create(
       {
-        ...(input.image
+        ...(input.snapshot
+          ? { snapshot: input.snapshot }
+          : input.image
           ? { image: input.image, ...(input.resources ? { resources: input.resources } : {}) }
           : { language: CodeLanguage.TYPESCRIPT }),
         ephemeral: true,
@@ -40,7 +45,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
           runId: input.runId,
         },
       },
-      { timeout: 120 },
+      { timeout: lifecycleTimeout },
     );
 
     return this.session(sandbox, autoStopInterval);
@@ -49,10 +54,23 @@ export class DaytonaSandboxProvider implements SandboxProvider {
   async resumeSandbox(id: string): Promise<SandboxSession> {
     const sandbox = await this.daytona.get(id);
     if (sandbox.state !== "started") {
-      await sandbox.start(120);
+      await sandbox.start(MIN_LIFECYCLE_TIMEOUT_SECONDS);
     }
     const autoStopInterval = sandbox.autoStopInterval ?? DEFAULT_AUTO_STOP_MINUTES;
     return this.session(sandbox, autoStopInterval);
+  }
+
+  async listRelunarSandboxes(): Promise<Array<{ id: string; runId: string | null; state: string }>> {
+    const items: Array<{ id: string; runId: string | null; state: string }> = [];
+    for await (const sandbox of this.daytona.list({ labels: { app: "relunar" } })) {
+      items.push({ id: sandbox.id, runId: sandbox.labels.runId ?? null, state: sandbox.state ?? "unknown" });
+    }
+    return items;
+  }
+
+  async deleteSandbox(id: string): Promise<void> {
+    const sandbox = await this.daytona.get(id);
+    await this.daytona.delete(sandbox, 120);
   }
 
   private session(sandbox: Awaited<ReturnType<Daytona["get"]>>, autoStopMinutes: number): SandboxSession {
@@ -86,6 +104,9 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       upload: async (localPath, remotePath) => {
         await sandbox.fs.uploadFile(localPath, remotePath);
       },
+      download: async (remotePath, localPath) => {
+        await sandbox.fs.downloadFile(remotePath, localPath);
+      },
       touchIdle: async (minutes = autoStopMinutes) => {
         await sandbox.setAutostopInterval(minutes);
       },
@@ -96,6 +117,11 @@ export class DaytonaSandboxProvider implements SandboxProvider {
       },
     };
   }
+}
+
+/** Cold image pulls routinely exceed Daytona's former 120-second default. */
+export function resolveSandboxLifecycleTimeout(configured?: number): number {
+  return Math.max(MIN_LIFECYCLE_TIMEOUT_SECONDS, configured ?? 0);
 }
 
 function isTimeoutError(error: unknown): boolean {

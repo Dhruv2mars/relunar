@@ -24,20 +24,24 @@ bunx @dhruv2mars/relunar
 | One-shot + finish | `relunar repro <n> --finish --outcome … --summary … [--comment] -- <probe>` |
 | Start sandbox | `relunar repro start <n>` |
 | Sync dirty tree | `relunar repro sync <run-id> [--include-untracked]` |
-| Upload file | `relunar repro upload <run-id> <local> <remote>` |
-| Exec in sandbox | `relunar repro exec <run-id> [--sync] -- <cmd>` |
+| Upload file | `relunar repro upload <run-id> <local> <repo-relative-path>` |
+| Exec in sandbox | `relunar repro exec <run-id> [assertion flags] -- <cmd>` |
 | Finish | `relunar repro finish <run-id> --outcome … --summary … [narrative flags] [--comment]` |
 | Abort | `relunar repro abort <run-id>` |
+| Preview comment | `relunar repro comment preview <run-id>` |
+| Retry comment | `relunar repro comment post <run-id>` |
+| Cleanup | `relunar repro cleanup <run-id>` |
+| Recover sandboxes | `relunar sandboxes list` / `relunar sandboxes gc [--confirm]` |
 | Inspect | `relunar runs show <run-id> --json` / `relunar runs list --json` |
 
 ## Finish narrative
 
 - `--comment` only when posting to GitHub.
 - Relunar formats the comment; it does not invent repro steps from raw logs.
-- Supply maintainer prose: `--summary` (required), plus `--repro-steps`, `--observed`, `--expected`, `--environment` when known.
+- Supply maintainer prose: `--summary`, `--repro-steps`, `--observed`, `--expected`, and `--environment` are required for conclusive outcomes.
 - Outcomes: `reproduced` | `not-reproduced` | `blocked`.
 - Evidence required before finish; baseline/setup output is not Evidence.
-- Default gate: `reproduced` needs a `repro` command that fails, times out, or produces stdout/stderr. Stricter gates live in `.relunar.yml` `evidence:`.
+- Default gate: conclusive outcomes need an evaluated assertion. Raw output is unverified. `--skip-evidence-gates` permanently makes the run unpublishable.
 - Sandbox stays warm until finish/abort; idle TTL is `sandbox.autoStopMinutes` (default 60). Prefer `--sync` when you edited files locally.
 
 ## Sync
@@ -72,3 +76,25 @@ Machine setup is global. Repo setup is inside the target repository.
 ```
 
 Harness internals stay in `report.json`. The Finish narrative is for maintainers.
+
+## Probe assertions
+
+Use one or more assertions on every probe:
+
+```sh
+relunar repro exec <run-id> \
+  --claim "Issue behavior being tested" \
+  --expect-exit 1 \
+  --stderr-match "panic|fatal" \
+  --file-exists tmp/crash.log \
+  --max-duration-ms 5000 \
+  --repeat 3 \
+  --reset-command "rm -rf tmp && mkdir tmp" \
+  -- <issue-specific-command>
+```
+
+Available assertions are `--expect-exit`, `--stdout-match`, `--stderr-match`, `--output-match`, `--file-exists`, and `--max-duration-ms`. Asserted probes require `--claim` and return an evidence ID. Every repeated attempt must pass. Add `--control-command` with `--control-expect-exit` or `--control-output-match` when the result needs a negative control. Finish must select the issue-relevant evidence ID with `--evidence`.
+
+## Repository environment
+
+`.relunar.yml` can declare `workspace` checkout/workdir/submodules/LFS, `environment.variables`, secret-name-only `environment.passthrough`, background `services`, and `artifacts.collect`. Relunar fingerprints the sandbox runtimes and archives configured artifacts into the local run directory. An explicit sandbox image or snapshot wins; otherwise Relunar detects common devcontainer, Rust, Python, Go, and Node toolchain files.
